@@ -99,9 +99,7 @@ def decrypt_credential(
     nonce, ciphertext = raw[:_NONCE_LEN], raw[_NONCE_LEN:]
     dek = _derive_dek(key, dek_id, key_version)
     try:
-        plaintext = AESGCM(dek).decrypt(
-            nonce, ciphertext, _aad(dek_id, key_version, field)
-        )
+        plaintext = AESGCM(dek).decrypt(nonce, ciphertext, _aad(dek_id, key_version, field))
     except InvalidTag as exc:
         raise DecryptionError(
             "密文解密失败：主密钥不匹配、数据被篡改或上下文（dek_id/字段/版本）不符"
@@ -122,12 +120,8 @@ def decrypt_account_credentials(
     ak_cipher: str, sk_cipher: str, *, dek_id: str, key_version: int
 ) -> tuple[str, str]:
     """解密账号 AK/SK 对，返回 (ak, sk)；失败抛 DecryptionError。"""
-    ak = decrypt_credential(
-        ak_cipher, dek_id=dek_id, key_version=key_version, field="ak"
-    )
-    sk = decrypt_credential(
-        sk_cipher, dek_id=dek_id, key_version=key_version, field="sk"
-    )
+    ak = decrypt_credential(ak_cipher, dek_id=dek_id, key_version=key_version, field="ak")
+    sk = decrypt_credential(sk_cipher, dek_id=dek_id, key_version=key_version, field="sk")
     return ak, sk
 
 

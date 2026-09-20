@@ -76,47 +76,31 @@ PLAIN_SK = "FakeSecret0123456789abcdef"
 
 
 def test_roundtrip():
-    ct = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
-    pt = crypto.decrypt_credential(
-        ct, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
+    ct = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
+    pt = crypto.decrypt_credential(ct, dek_id="d1", key_version=1, field="ak", master_key=KEY)
     assert pt == PLAIN_AK
     assert PLAIN_AK not in ct
 
 
 def test_random_nonce_gives_different_ciphertext():
-    c1 = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
-    c2 = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
+    c1 = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
+    c2 = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
     assert c1 != c2
 
 
 def test_tampered_ciphertext_raises():
-    ct = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
+    ct = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
     raw = bytearray(base64.b64decode(ct))
     raw[-1] ^= 0x01
     tampered = base64.b64encode(bytes(raw)).decode()
     with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt_credential(
-            tampered, dek_id="d1", key_version=1, field="ak", master_key=KEY
-        )
+        crypto.decrypt_credential(tampered, dek_id="d1", key_version=1, field="ak", master_key=KEY)
 
 
 def test_field_mismatch_raises():
-    ct = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
+    ct = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
     with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt_credential(
-            ct, dek_id="d1", key_version=1, field="sk", master_key=KEY
-        )
+        crypto.decrypt_credential(ct, dek_id="d1", key_version=1, field="sk", master_key=KEY)
 
 
 def test_dek_id_mismatch_blocks_cross_account_swap():
@@ -124,33 +108,21 @@ def test_dek_id_mismatch_blocks_cross_account_swap():
         PLAIN_AK, dek_id="account-a", key_version=1, field="ak", master_key=KEY
     )
     with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt_credential(
-            ct, dek_id="account-b", key_version=1, field="ak", master_key=KEY
-        )
+        crypto.decrypt_credential(ct, dek_id="account-b", key_version=1, field="ak", master_key=KEY)
 
 
 def test_key_version_changes_derivation():
-    v1 = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
-    v2 = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=2, field="ak", master_key=KEY
-    )
+    v1 = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
+    v2 = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=2, field="ak", master_key=KEY)
     assert v1 != v2
     with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt_credential(
-            v1, dek_id="d1", key_version=2, field="ak", master_key=KEY
-        )
+        crypto.decrypt_credential(v1, dek_id="d1", key_version=2, field="ak", master_key=KEY)
 
 
 def test_wrong_master_key_raises():
-    ct = crypto.encrypt_credential(
-        PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY
-    )
+    ct = crypto.encrypt_credential(PLAIN_AK, dek_id="d1", key_version=1, field="ak", master_key=KEY)
     with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt_credential(
-            ct, dek_id="d1", key_version=1, field="ak", master_key=b"z" * 32
-        )
+        crypto.decrypt_credential(ct, dek_id="d1", key_version=1, field="ak", master_key=b"z" * 32)
 
 
 def test_invalid_base64_cipher_raises():
@@ -163,9 +135,7 @@ def test_invalid_base64_cipher_raises():
 def test_short_cipher_raises():
     short = base64.b64encode(b"\x00" * 8).decode()
     with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt_credential(
-            short, dek_id="d1", key_version=1, field="ak", master_key=KEY
-        )
+        crypto.decrypt_credential(short, dek_id="d1", key_version=1, field="ak", master_key=KEY)
 
 
 def test_dek_derivation_deterministic_and_distinct():
@@ -184,9 +154,7 @@ def test_new_dek_id_unique():
 def test_account_credentials_roundtrip(monkeypatch):
     _clear_env(monkeypatch)
     monkeypatch.setenv(crypto._ENV_KEY, KEY_A)
-    ak_cipher, sk_cipher, dek_id, version = crypto.encrypt_account_credentials(
-        PLAIN_AK, PLAIN_SK
-    )
+    ak_cipher, sk_cipher, dek_id, version = crypto.encrypt_account_credentials(PLAIN_AK, PLAIN_SK)
     assert dek_id and version == crypto.CURRENT_KEY_VERSION
     ak, sk = crypto.decrypt_account_credentials(
         ak_cipher, sk_cipher, dek_id=dek_id, key_version=version

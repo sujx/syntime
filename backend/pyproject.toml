@@ -20,6 +20,13 @@ python_version = "3.12"
 plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
 check_untyped_defs = true
 
+# celery 未提供 py.typed/类型桩，放行其缺失导入。
+# 阿里云 V2.0 SDK（alibabacloud_*）受 Gate-P2a 约束、实测后方入依赖树，
+# 其懒加载导入在 providers/base.py 内以定向 type: ignore 处理。
+[[tool.mypy.overrides]]
+module = ["celery.*"]
+ignore_missing_imports = true
+
 [tool.django-stubs]
 django_settings_module = "config.settings.dev"
 

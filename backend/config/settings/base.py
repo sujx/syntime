@@ -127,3 +127,10 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "与时偕行 · 多云成本管理平台",
     "VERSION": "0.1.0",
 }
+
+# Celery：broker 走环境变量，开发期可临时换 PG broker，生产必须 Redis（HANDOFF §6）
+CELERY_BROKER_URL = os.environ.get("SYNTIME_CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_TIMEZONE = TIME_ZONE
+
+# 任务互斥锁的 Redis 地址：缺省复用 broker（仅当 broker 是 Redis 时），否则本机 1 号库
+SYNTIME_LOCK_REDIS_URL = os.environ.get("SYNTIME_LOCK_REDIS_URL", "")

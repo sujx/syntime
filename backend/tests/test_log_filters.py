@@ -45,6 +45,6 @@ def test_filter_masks_message_and_clears_args():
 
 def test_filter_masks_exc_text():
     record = _record("boom")
-    record.exc_text = 'ValueError: invalid sk=abc123456789'
+    record.exc_text = "ValueError: invalid sk=abc123456789"
     SensitiveDataFilter().filter(record)
     assert "abc123456789" not in (record.exc_text or "")
