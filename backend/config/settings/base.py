@@ -2,7 +2,12 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# 本地开发凭据（SYNTIME_SECRET_KEY / SYNTIME_DB_PASSWORD 等）注入自 backend/.env（不入库）
+load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ["SYNTIME_SECRET_KEY"]
 

@@ -1,4 +1,10 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# 先注入 .env 再 setdefault，否则空默认值会挡住 .env 中的真实配置
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 os.environ.setdefault("SYNTIME_SECRET_KEY", "dev-only-insecure-key")
 os.environ.setdefault("SYNTIME_DB_PASSWORD", "")
