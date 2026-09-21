@@ -17,8 +17,19 @@ ROLE_FINANCE = "财务人员"
 ALL_ROLES = (ROLE_COST_ADMIN, ROLE_OPS, ROLE_FINANCE)
 
 # PRD 4.2：财务人员对「明细-实例ID」与「事件中心-资源标识字段」不可见（接口返回 null）
+# 同时列 snake_case 与 camelCase：JSON 出参为 camelCase（如 pageSize/instanceId），
+# 混入按序列化器输出键交集屏蔽，故两种命名都需登记，避免新接口漏屏蔽。
 ROLE_MASKED_FIELDS: dict[str, frozenset[str]] = {
-    ROLE_FINANCE: frozenset({"instance_id", "resource_id", "instance_name"}),
+    ROLE_FINANCE: frozenset(
+        {
+            "instance_id",
+            "resource_id",
+            "instance_name",
+            "instanceId",
+            "resourceId",
+            "instanceName",
+        }
+    ),
 }
 
 
