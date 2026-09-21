@@ -3,6 +3,7 @@
 > 私有化部署的多云成本管理（FinOps）平台：把多云账单、资产台账、事件中心与项目成本分摊收口到一个自托管后台，让"钱花在哪、哪些在空烧、哪个项目超预算"一目了然。
 
 [![Stars](https://img.shields.io/github/stars/sujx/syntime?style=social)](https://github.com/sujx/syntime/stargazers)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/django-5.2-0C4B33)](https://www.djangoproject.com/)
 [![Tests](https://img.shields.io/badge/tests-231%20passed-brightgreen)](#-开发与质量门)
@@ -169,4 +170,6 @@ pytest                  # 测试（DJANGO_SETTINGS_MODULE=config.settings.test�
 
 ## 📝 License
 
-待定（仓库暂未添加 LICENSE 文件）。在明确许可证前，保留所有权利。
+[Apache License 2.0](LICENSE) © 2026 sujx@live.cn
+
+允许免费商用、修改与私有化部署（与本项目「私有化部署、允许以公司名义提供实施服务」的定位一致）；分发时需保留版权与许可声明、修改文件需注明改动。详见 [LICENSE](LICENSE)。
