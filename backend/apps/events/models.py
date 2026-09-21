@@ -12,9 +12,7 @@ class EventTypeDict(models.Model):
 
     code = models.CharField("类型代码", max_length=64)
     display_name = models.CharField("显示名", max_length=128)
-    default_level = models.CharField(
-        "默认级别", max_length=16, choices=DefaultLevel.choices
-    )
+    default_level = models.CharField("默认级别", max_length=16, choices=DefaultLevel.choices)
     data_source = models.CharField("数据源说明", max_length=128, null=True, blank=True)
     enabled = models.BooleanField("启用", default=True)
     sort_order = models.IntegerField("排序", default=0)
@@ -68,12 +66,8 @@ class CloudEvent(models.Model):
         blank=True,
     )
     provider = models.CharField("厂商", max_length=32, null=True, blank=True)
-    vendor_event_code = models.CharField(
-        "厂商原始事件类型", max_length=64, null=True, blank=True
-    )
-    vendor_event_name = models.CharField(
-        "厂商事件名称", max_length=128, null=True, blank=True
-    )
+    vendor_event_code = models.CharField("厂商原始事件类型", max_length=64, null=True, blank=True)
+    vendor_event_name = models.CharField("厂商事件名称", max_length=128, null=True, blank=True)
     region = models.CharField("地域", max_length=64, null=True, blank=True)
     project_tag = models.CharField("项目标签", max_length=128, null=True, blank=True)
     title = models.CharField("标题", max_length=256)
@@ -82,9 +76,7 @@ class CloudEvent(models.Model):
     raw_payload = models.TextField("厂商原始报文（截断 4KB）", null=True, blank=True)
     occurred_at = models.DateTimeField("厂商发生时间", null=True, blank=True)
     received_at = models.DateTimeField("平台接收时间", default=timezone.now)
-    status = models.CharField(
-        "状态", max_length=16, choices=Status.choices, default=Status.UNREAD
-    )
+    status = models.CharField("状态", max_length=16, choices=Status.choices, default=Status.UNREAD)
     handled_by = models.CharField("处理人", max_length=150, null=True, blank=True)
     handled_at = models.DateTimeField("处理时间", null=True, blank=True)
     dedup_key = models.CharField("去重键", max_length=128)
@@ -124,16 +116,10 @@ class VendorMessageLog(models.Model):
         blank=True,
     )
     message_id = models.CharField("厂商消息 ID", max_length=128)
-    vendor_event_code = models.CharField(
-        "厂商原始事件类型", max_length=64, null=True, blank=True
-    )
-    vendor_event_name = models.CharField(
-        "厂商事件名称", max_length=128, null=True, blank=True
-    )
+    vendor_event_code = models.CharField("厂商原始事件类型", max_length=64, null=True, blank=True)
+    vendor_event_name = models.CharField("厂商事件名称", max_length=128, null=True, blank=True)
     raw_payload = models.TextField("原始报文")
-    mapped_event_type = models.CharField(
-        "映射后事件类型", max_length=64, null=True, blank=True
-    )
+    mapped_event_type = models.CharField("映射后事件类型", max_length=64, null=True, blank=True)
     mapped_status = models.CharField(
         "映射状态", max_length=16, choices=MappedStatus.choices, null=True, blank=True
     )
@@ -156,9 +142,7 @@ class VendorMessageLog(models.Model):
             models.UniqueConstraint(fields=["provider", "message_id"], name="uk_vendor_msg"),
         ]
         indexes = [
-            models.Index(
-                fields=["mapped_status", "received_at"], name="idx_vmsg_unmapped"
-            ),
+            models.Index(fields=["mapped_status", "received_at"], name="idx_vmsg_unmapped"),
             models.Index(fields=["received_at"], name="idx_vmsg_time"),
         ]
 

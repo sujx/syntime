@@ -84,9 +84,7 @@ class AsyncTask(models.Model):
         FAILED = "failed", "失败"
 
     task_type = models.CharField("任务类型", max_length=64, choices=TaskType.choices)
-    status = models.CharField(
-        "状态", max_length=16, choices=Status.choices, default=Status.PENDING
-    )
+    status = models.CharField("状态", max_length=16, choices=Status.choices, default=Status.PENDING)
     params_snapshot = models.JSONField("筛选条件快照", null=True, blank=True)
     data_version = models.CharField("数据版本", max_length=64, null=True, blank=True)
     file_path = models.TextField("文件路径", null=True, blank=True)

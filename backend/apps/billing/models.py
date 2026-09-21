@@ -20,9 +20,7 @@ class CloudAccount(models.Model):
     sk_cipher = models.TextField("SK 密文")
     dek_id = models.CharField("数据密钥标识", max_length=64, null=True, blank=True)
     key_version = models.IntegerField("密钥版本", default=1)
-    status = models.CharField(
-        "状态", max_length=16, choices=Status.choices, default=Status.ENABLED
-    )
+    status = models.CharField("状态", max_length=16, choices=Status.choices, default=Status.ENABLED)
     last_sync_time = models.DateTimeField("最近成功同步", null=True, blank=True)
     last_sync_attempt_time = models.DateTimeField("最近同步尝试", null=True, blank=True)
     last_sync_error = models.TextField("最近同步失败原因", null=True, blank=True)
@@ -60,9 +58,7 @@ class CloudBillDetail(models.Model):
     resource_type = models.CharField("资源类型", max_length=32)
     project_tag = models.CharField("项目标签", max_length=128, null=True, blank=True)
     raw_tags = models.TextField("原始标签串", null=True, blank=True)
-    tag_status = models.CharField(
-        "标签状态", max_length=16, choices=TagStatus.choices
-    )
+    tag_status = models.CharField("标签状态", max_length=16, choices=TagStatus.choices)
     charge_type = models.CharField("计费类型", max_length=32)
     currency = models.CharField("币种", max_length=8)
     amount = models.DecimalField("原币金额", max_digits=20, decimal_places=8)
@@ -97,9 +93,7 @@ class CloudBillDetail(models.Model):
         indexes = [
             models.Index(fields=["bill_date"], name="idx_bill_date"),
             models.Index(fields=["project_tag", "bill_date"], name="idx_project"),
-            models.Index(
-                fields=["cloud_account", "bill_date"], name="idx_account_date"
-            ),
+            models.Index(fields=["cloud_account", "bill_date"], name="idx_account_date"),
         ]
 
     def __str__(self) -> str:
@@ -144,8 +138,7 @@ class SyncLog(models.Model):
 
     def __str__(self) -> str:
         return (
-            f"{self.cloud_account_id}/{self.sync_type}/"
-            f"{self.bill_date_start}~{self.bill_date_end}"
+            f"{self.cloud_account_id}/{self.sync_type}/{self.bill_date_start}~{self.bill_date_end}"
         )
 
 

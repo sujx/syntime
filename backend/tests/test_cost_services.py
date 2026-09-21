@@ -1,16 +1,18 @@
-"""§5.3 口径计算层纯函数单测（确定性，不依赖 DB）。"""
+"""§5.3 口径计算层纯函数单测（确定性，不依赖 DB）+ §6 uk_daily 覆盖写（依赖 DB）。"""
 
 from datetime import date
 from decimal import Decimal
 
 import pytest
 
+from apps.billing.models import CloudAccount
 from apps.cost.models import ProjectCostDaily
 from apps.cost.services import (
     budget_denominator,
     budget_ratio_pct,
     covered_bill_months,
     mom_change_pct,
+    overwrite_daily,
     previous_period,
     resolve_tag_ownership,
 )
@@ -152,3 +154,81 @@ def test_budget_ratio_unconfigured_denominator_is_none():
 
 def test_budget_ratio_current_missing_is_none():
     assert budget_ratio_pct(None, Decimal("200")) is None
+
+
+# ---------- §6 uk_daily 覆盖写（依赖 DB） ----------
+
+
+@pytest.fixture
+def _account() -> CloudAccount:
+    return CloudAccount.objects.create(
+        vendor="aliyun",
+        account_name="acc1",
+        account_type="main",
+        ak_cipher="x",
+        sk_cipher="y",
+    )
+
+
+def _daily(
+    account: CloudAccount, stat_date: date, project_tag: str, amount: str
+) -> ProjectCostDaily:
+    return ProjectCostDaily(
+        stat_date=stat_date,
+        project_tag=project_tag,
+        tag_status=NORMAL,
+        cloud_account=account,
+        region="cn-hangzhou",
+        resource_type="ecs",
+        amount=Decimal(amount),
+        bill_count=1,
+    )
+
+
+@pytest.mark.django_db
+def test_overwrite_daily_replaces_by_whole_date(_account):
+    d1, d2 = date(2026, 9, 1), date(2026, 9, 2)
+    overwrite_daily([_daily(_account, d1, "p1", "10.00"), _daily(_account, d2, "p1", "5.00")])
+    deleted, inserted = overwrite_daily(
+        [_daily(_account, d1, "p1", "12.00"), _daily(_account, d1, "p2", "3.00")]
+    )
+    assert (deleted, inserted) == (1, 2)  # d1 整日替换（含维度变化），d2 不受影响
+    assert ProjectCostDaily.objects.filter(stat_date=d1).count() == 2
+    assert ProjectCostDaily.objects.filter(stat_date=d2).count() == 1
+    amounts = {r.project_tag: r.amount for r in ProjectCostDaily.objects.filter(stat_date=d1)}
+    assert amounts == {"p1": Decimal("12.00"), "p2": Decimal("3.00")}
+
+
+@pytest.mark.django_db
+def test_overwrite_daily_repeat_is_idempotent(_account):
+    d1 = date(2026, 9, 1)
+
+    def _rows() -> list[ProjectCostDaily]:
+        return [
+            _daily(_account, d1, "p1", "10.00"),
+            _daily(_account, d1, "p2", "5.00"),
+        ]
+
+    overwrite_daily(_rows())
+    overwrite_daily(_rows())
+    assert ProjectCostDaily.objects.count() == 2  # 重复聚合不翻倍
+    total = sum(r.amount for r in ProjectCostDaily.objects.all())
+    assert total == Decimal("15.00")
+
+
+@pytest.mark.django_db
+def test_overwrite_daily_dedupes_within_batch(_account):
+    d1 = date(2026, 9, 1)
+    deleted, inserted = overwrite_daily(
+        [
+            _daily(_account, d1, "p1", "10.00"),
+            _daily(_account, d1, "p1", "99.00"),  # 同 uk_daily 键，取后者
+        ]
+    )
+    assert (deleted, inserted) == (0, 1)
+    assert ProjectCostDaily.objects.get().amount == Decimal("99.00")
+
+
+@pytest.mark.django_db
+def test_overwrite_daily_empty_is_noop():
+    assert overwrite_daily([]) == (0, 0)

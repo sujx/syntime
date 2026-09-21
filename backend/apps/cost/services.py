@@ -1,17 +1,22 @@
-"""口径计算层（engineering-conventions §5.3）：全部为无副作用纯函数。
+"""口径计算层（engineering-conventions §5.3）+ 预聚合覆盖写（§6 uk_daily）。
 
-覆盖 PRD 2.1.1 标签归属、2.2.1 环比、2.2.2 预算分母与占比、2.4 除零/-- 降级。
-「可追溯、可复算」（PRD 1.2-6）的唯一实现：账单导入（apps/billing/services.py）
-与聚合任务共享本模块的标签归属规则，环比与预算占比不落库、查询时计算。
+口径计算覆盖 PRD 2.1.1 标签归属、2.2.1 环比、2.2.2 预算分母与占比、2.4 除零/--
+降级，全部为无副作用纯函数。「可追溯、可复算」（PRD 1.2-6）的唯一实现：
+账单导入（apps/billing/services.py）与聚合任务共享本模块的标签归属规则，
+环比与预算占比不落库、查询时计算。
+
+``overwrite_daily`` 是唯一的写路径函数（§6）：聚合任务整日全量重算后覆盖写。
 
 金额链路一律 Decimal（§3 金额红线）；展示层格式化（千分位两位小数）不在此层。
 返回 ``None`` 即口径上的「--」（无法计算），由序列化层翻译，禁止用 0 冒充。
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+
+from django.db import transaction
 
 from apps.cost.models import ProjectCostDaily
 
@@ -140,3 +145,35 @@ def budget_ratio_pct(current: Decimal | None, denominator: Decimal) -> Decimal |
     if current is None or denominator <= 0:
         return None
     return current / denominator * Decimal(100)
+
+
+# ---------- 预聚合覆盖写（§6 uk_daily，唯一写路径函数） ----------
+
+
+def _daily_key(row: ProjectCostDaily) -> tuple[date, str, str, int, str | None, str]:
+    return (
+        row.stat_date,
+        row.project_tag,
+        row.tag_status,
+        row.cloud_account_id,
+        row.region,
+        row.resource_type,
+    )
+
+
+def overwrite_daily(rows: Iterable[ProjectCostDaily]) -> tuple[int, int]:
+    """uk_daily 覆盖写：按受影响 ``stat_date`` 集合同事务 DELETE + INSERT。
+
+    聚合任务按天全量重算后整批写入——天是最小覆盖粒度，不按维度局部 UPDATE，
+    重复聚合不产生重复金额（测试用例 152-7）。同批内重复键取后者。
+    返回 (deleted, inserted)。
+    """
+    deduped = {_daily_key(row): row for row in rows}
+    objs = list(deduped.values())
+    if not objs:
+        return 0, 0
+    dates = {row.stat_date for row in objs}
+    with transaction.atomic():
+        deleted, _ = ProjectCostDaily.objects.filter(stat_date__in=dates).delete()
+        ProjectCostDaily.objects.bulk_create(objs)
+    return deleted, len(objs)
