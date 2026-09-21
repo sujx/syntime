@@ -162,6 +162,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "cost.reaggregate_previous_month",
         "schedule": crontab(hour=3, minute=0, day_of_month=3),
     },
+    # 平台自算检测：每小时一次（tasks.md 任务 8——域名到期 / 预算超支均为状态判断，
+    # 无需高频扫描）；两类检测按业务键 dedup 去重，重复扫描幂等。
+    "self-calc-detect": {
+        "task": "events.self_calc_detect",
+        "schedule": crontab(minute=0),
+    },
 }
 
 # 任务互斥锁的 Redis 地址：缺省复用 broker（仅当 broker 是 Redis 时），否则本机 1 号库
