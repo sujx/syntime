@@ -2,6 +2,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -153,6 +154,15 @@ SPECTACULAR_SETTINGS = {
 # Celery：broker 走环境变量，开发期可临时换 PG broker，生产必须 Redis（HANDOFF §6）
 CELERY_BROKER_URL = os.environ.get("SYNTIME_CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_TIMEZONE = TIME_ZONE
+
+# 每月 3 日 03:00 对上一账期全量重算（tasks.md 任务2-④；镜像 platform_setting
+# sync_cron.reaggregate_monthly 默认 "0 3 3 * *"）。账单同步完成后的窗口聚合由同步任务链式触发。
+CELERY_BEAT_SCHEDULE = {
+    "reaggregate-previous-month": {
+        "task": "cost.reaggregate_previous_month",
+        "schedule": crontab(hour=3, minute=0, day_of_month=3),
+    },
+}
 
 # 任务互斥锁的 Redis 地址：缺省复用 broker（仅当 broker 是 Redis 时），否则本机 1 号库
 SYNTIME_LOCK_REDIS_URL = os.environ.get("SYNTIME_LOCK_REDIS_URL", "")

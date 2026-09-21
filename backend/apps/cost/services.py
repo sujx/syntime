@@ -17,7 +17,9 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Count, Sum
 
+from apps.billing.models import CloudBillDetail
 from apps.cost.models import ProjectCostDaily
 
 TAG_NORMAL = ProjectCostDaily.TagStatus.NORMAL
@@ -177,3 +179,47 @@ def overwrite_daily(rows: Iterable[ProjectCostDaily]) -> tuple[int, int]:
         deleted, _ = ProjectCostDaily.objects.filter(stat_date__in=dates).delete()
         ProjectCostDaily.objects.bulk_create(objs)
     return deleted, len(objs)
+
+
+def aggregate_daily(start: date, end: date) -> tuple[int, int]:
+    """任务2：把 ``[start, end]`` 账单按六键聚合为日成本，覆盖写 ``project_cost_daily``。
+
+    分组键 = stat_date(bill_date) + project_tag + tag_status + cloud_account + region
+    + resource_type（tasks.md 任务2）；标签归属已在账单入库时落定（build_bill_row），
+    此处直接信任，不再重算。金额取 ``Sum(amount_cny)``（账单入库已折算为 CNY）。
+
+    unassigned 的 ``project_tag`` 为 None → 归一为 ``""``（``ProjectCostDaily.project_tag``
+    列非空；查询层按 tag_status 归并到「未分配成本」，该值仅作占位）。整组 ``amount_cny``
+    全为 NULL（缺汇率未折算）→ 跳过不生成行，待汇率补录后重算窗口拾回，不以 0 冒充。
+
+    返回 ``overwrite_daily`` 的 ``(deleted, inserted)``。
+    """
+    agg = (
+        CloudBillDetail.objects.filter(bill_date__gte=start, bill_date__lte=end)
+        .values(
+            "bill_date",
+            "project_tag",
+            "tag_status",
+            "cloud_account_id",
+            "region",
+            "resource_type",
+        )
+        .annotate(total=Sum("amount_cny"), cnt=Count("id"))
+    )
+    rows: list[ProjectCostDaily] = []
+    for g in agg:
+        if g["total"] is None:
+            continue
+        rows.append(
+            ProjectCostDaily(
+                stat_date=g["bill_date"],
+                project_tag=g["project_tag"] or "",
+                tag_status=g["tag_status"],
+                cloud_account_id=g["cloud_account_id"],
+                region=g["region"],
+                resource_type=g["resource_type"],
+                amount=g["total"],
+                bill_count=g["cnt"],
+            )
+        )
+    return overwrite_daily(rows)
