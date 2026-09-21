@@ -19,6 +19,9 @@ select = ["E", "F", "W", "I", "UP", "B"]
 python_version = "3.12"
 plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
 check_untyped_defs = true
+# tests/ 不是包：以项目根为基址解析模块名，避免双重解析冲突
+explicit_package_bases = true
+mypy_path = "."
 
 # celery 未提供 py.typed/类型桩，放行其缺失导入。
 # 阿里云 V2.0 SDK（alibabacloud_*）受 Gate-P2a 约束、实测后方入依赖树，
@@ -31,6 +34,6 @@ ignore_missing_imports = true
 django_settings_module = "config.settings.dev"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.dev"
+DJANGO_SETTINGS_MODULE = "config.settings.test"
 testpaths = ["apps", "tests"]
 python_files = ["test_*.py"]

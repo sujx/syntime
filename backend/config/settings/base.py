@@ -23,6 +23,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
     "apps.billing.apps.BillingConfig",
     "apps.cost.apps.CostConfig",
@@ -119,18 +121,33 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    "DEFAULT_RENDERER_CLASSES": (
+        "common.api.response.ResultEnvelopeRenderer",
+        "rest_framework.renderers.JSONRenderer",
+    ),
+    "EXCEPTION_HANDLER": "common.api.response.exception_handler",
+    "DEFAULT_PAGINATION_CLASS": "common.api.pagination.ResultPaginator",
+    "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # 登出依赖黑名单（token_blacklist app）；轮换时旧 refresh 同步拉黑
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
 }
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "SynTime API",
     "DESCRIPTION": "与时偕行 · 多云成本管理平台",
     "VERSION": "0.1.0",
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "common.api.response.spectacular_envelope_hook",
+    ],
 }
 
 # Celery：broker 走环境变量，开发期可临时换 PG broker，生产必须 Redis（HANDOFF §6）
