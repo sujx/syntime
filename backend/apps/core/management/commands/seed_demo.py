@@ -10,10 +10,11 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.assets.models import CloudAsset
-from apps.billing.models import CloudAccount, CloudBillDetail, ResourceTypeDict
+from apps.billing.models import CloudAccount, CloudBillDetail, ResourceTypeDict, SyncLog
 from apps.billing.partitions import ensure_monthly_partition
 from apps.cost.models import ProjectBudget, ProjectCostDaily
 from apps.cost.services import aggregate_daily
@@ -57,10 +58,14 @@ class Command(BaseCommand):
     def _clean(self) -> None:
         qs = CloudAccount.objects.filter(vendor=VENDOR, account_name__in=[a for a, _ in ACCOUNTS])
         ids = list(qs.values_list("pk", flat=True))
-        CloudEvent.objects.filter(dedup_key__startswith="seed:").delete()
+        # 种子账号上的 RESTRICT 依赖须先于账号删除：事件含 beat 检测残留（非 seed: 前缀）与同步日志
+        CloudEvent.objects.filter(
+            Q(dedup_key__startswith="seed:") | Q(cloud_account_id__in=ids)
+        ).delete()
         CloudAsset.objects.filter(cloud_account_id__in=ids).delete()
         CloudBillDetail.objects.filter(cloud_account_id__in=ids).delete()
         ProjectCostDaily.objects.filter(cloud_account_id__in=ids).delete()
+        SyncLog.objects.filter(cloud_account_id__in=ids).delete()
         ProjectBudget.objects.filter(project_tag__in=PROJECTS).delete()
         qs.delete()
 
