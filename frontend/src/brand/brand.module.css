@@ -1,0 +1,27 @@
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 700;
+  line-height: 1;
+}
+.syn {
+  font-size: inherit;
+}
+.time {
+  font-size: inherit;
+  background: linear-gradient(90deg, var(--primary-600), #17646b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.onDark .syn {
+  color: #fff;
+}
+.onDark .time {
+  background: linear-gradient(90deg, #7ea4f5, #3fbfa9);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.onLight .syn {
+  color: var(--gray-900);
+}

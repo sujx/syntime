@@ -1,0 +1,45 @@
+export const zh: Record<string, string> = {
+  "brand.name": "SynTime · 与时偕行",
+  "brand.slogan": "多云成本，一目了然",
+
+  "login.title": "登录控制台",
+  "login.tabPassword": "账号密码",
+  "login.tabSms": "手机验证码",
+  "login.username": "用户名",
+  "login.password": "密码",
+  "login.remember": "记住账号",
+  "login.submit": "登 录",
+  "login.agreement": "登录即代表同意《服务条款》与《隐私政策》",
+  "login.sso": "企业 SSO 登录（即将开放）",
+  "login.smsTodo": "短信登录尚未开放，请使用账号密码登录",
+  "login.heroFeat1": "多云账单自动归集",
+  "login.heroFeat2": "项目 / 部门成本分摊",
+  "login.heroFeat3": "预算与异常洞察",
+  "login.copyright": "© 2026 SynTime · 与时偕行",
+
+  "nav.groupCost": "成本分析",
+  "nav.groupResource": "资源管理",
+  "nav.groupSystem": "系统设置",
+  "nav.dashboard": "仪表盘",
+  "nav.projectSettlement": "项目结算",
+  "nav.budget": "预算管理",
+  "nav.governance": "成本治理",
+  "nav.asset": "资产清单",
+  "nav.cloudAccount": "云账号管理",
+  "nav.event": "事件中心",
+  "nav.alertConfig": "告警配置",
+
+  "shell.logout": "退出登录",
+  "shell.syncChip": "数据同步正常",
+  "shell.userMenu": "用户菜单",
+
+  "placeholder.phase2": "二期规划",
+  "placeholder.phase2Note": "二期规划能力，当前版本仅作占位展示：",
+  "placeholder.dataWiring": "数据接线在下一期",
+
+  "import.sectionTitle": "账单导入",
+  "import.dropHint": "拖拽或点击上传 CSV / Excel 账单文件",
+  "import.templateHint": "各云厂商账单模板在二期提供",
+
+  "chart.pending": "图表数据接线在下一期",
+};
