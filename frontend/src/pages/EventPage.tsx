@@ -130,6 +130,7 @@ export default function EventPage() {
                   <Button
                     type="link"
                     size="small"
+                    autoInsertSpace={false}
                     className={styles.link}
                     onClick={() => act(row, "ignore")}
                   >
@@ -175,7 +176,7 @@ export default function EventPage() {
       {isError ? (
         <div style={{ padding: "var(--space-5)", textAlign: "center" }}>
           {zh["common.loadFail"]}{" "}
-          <Button type="link" onClick={() => void refetch()}>
+          <Button type="link" autoInsertSpace={false} onClick={() => void refetch()}>
             {zh["common.retry"]}
           </Button>
         </div>

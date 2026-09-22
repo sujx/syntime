@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App as AntdApp } from "antd";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authState = vi.hoisted(() => ({ role: "成本管理员" }));
 
@@ -20,6 +20,7 @@ vi.mock("@/hooks/useAuth", () => ({
 import { get, post } from "@/api/client";
 import EventPage from "@/pages/EventPage";
 import { zh } from "@/i18n/zh";
+import styles from "@/pages/event/event.module.css";
 
 const row = {
   id: 11,
@@ -43,7 +44,17 @@ const row = {
   handledBy: null,
   handledAt: null,
 };
-const pageData = { total: 1, page: 1, pageSize: 20, list: [row], unreadCount: 1 };
+// 第二行：已读态，用于断言未读行高亮只落在 unread 行上
+const readRow = {
+  ...row,
+  id: 12,
+  eventNo: "EV-002",
+  title: "域名到期提醒",
+  eventLevel: "info",
+  source: "manual",
+  status: "read",
+};
+const pageData = { total: 2, page: 1, pageSize: 20, list: [row, readRow], unreadCount: 1 };
 
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -57,17 +68,32 @@ function setup() {
 }
 
 describe("EventPage", () => {
+  // 角色内联改写后必须复位，防止泄漏到后续用例
+  beforeEach(() => {
+    authState.role = "成本管理员";
+  });
+  afterEach(() => {
+    authState.role = "成本管理员";
+  });
   it("渲染列表、Tab 计数与未读行", async () => {
     vi.mocked(get).mockResolvedValue(pageData);
     setup();
     expect(await screen.findByText("账号欠费告警")).toBeInTheDocument();
-    // Tab「未读」与状态 pill「未读」同文案（zh 字典既定），用 role 查询唯一锚定 Tab
-    expect(
-      screen.getByRole("button", { name: new RegExp(zh["evt.tabUnread"] ?? "") }),
-    ).toBeInTheDocument();
+    // Tab「未读」与状态 pill「未读」同文案（zh 字典既定），用 role 查询唯一锚定 Tab；
+    // 计数徽标是 Tab 内 span，accessible name 拼接为「未读1」，正则同时钉住文案与数字
+    const unreadTab = screen.getByRole("button", {
+      name: new RegExp(`${zh["evt.tabUnread"] ?? ""}\\s*1`),
+    });
+    expect(within(unreadTab).getByText("1")).toBeInTheDocument();
     expect(screen.getByText(zh["evt.markRead"] ?? "")).toBeInTheDocument();
     expect(screen.getByText(zh["evt.sourceVendor"] ?? "")).toBeInTheDocument();
     expect(screen.getByText("急")).toBeInTheDocument(); // critical 级别图标
+    // 未读行高亮：CSS Modules 在 vitest 下返回 scoped 类名（如 _unreadRow_xxxxx），
+    // 从同一 styles 对象取值断言，落在未读行 <tr>、不落在已读行 <tr>
+    const unreadRowClass = styles.unreadRow ?? "";
+    expect(unreadRowClass).not.toBe("");
+    expect(screen.getByText("账号欠费告警").closest("tr")).toHaveClass(unreadRowClass);
+    expect(screen.getByText("域名到期提醒").closest("tr")).not.toHaveClass(unreadRowClass);
   });
   it("标记已读走接口13并提示成功", async () => {
     vi.mocked(get).mockResolvedValue(pageData);
@@ -102,6 +128,5 @@ describe("EventPage", () => {
     setup();
     await screen.findByText("账号欠费告警");
     expect(screen.queryByText(zh["evt.markRead"] ?? "")).not.toBeInTheDocument();
-    authState.role = "成本管理员";
   });
 });
