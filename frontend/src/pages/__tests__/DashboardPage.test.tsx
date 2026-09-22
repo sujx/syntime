@@ -1,0 +1,84 @@
+import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+
+vi.mock("@/api/client", () => ({ get: vi.fn(), post: vi.fn() }));
+vi.mock("@/components/chart/ChartCard", () => ({
+  ChartCard: ({ title }: { title: string }) => <div data-testid={`chart:${title}`} />,
+}));
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({
+    username: "alice",
+    role: "成本管理员",
+    status: "authenticated",
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+}));
+
+import { get } from "@/api/client";
+import DashboardPage from "@/pages/DashboardPage";
+import { zh } from "@/i18n/zh";
+
+const data = {
+  cards: {
+    cloudAccountTotal: 3,
+    enabled: 2,
+    disabled: 1,
+    assetTotal: 10,
+    running: 8,
+    stopped: 2,
+    monthAmount: "123456.78",
+    monthRate: "12.34",
+    isEstimate: true,
+    unallocatedAmount: "999.00",
+    unallocatedRatio: "1.25",
+    eventPending: 7,
+    eventHigh: 2,
+    eventWarning: 3,
+  },
+  trend: {
+    current: [],
+    compare: [],
+    statRange: { start: "2026-08-23", end: "2026-09-21" },
+    compareRange: { start: "2026-07-24", end: "2026-08-22" },
+    billMonthIncomplete: true,
+  },
+  syncStatus: {
+    accounts: [
+      {
+        accountName: "prod-main",
+        vendor: "aliyun",
+        lastSyncTime: "2026-09-21T02:30:00+08:00",
+        status: "success",
+      },
+    ],
+    lastAggregateTime: "2026-09-21T03:00:00+08:00",
+  },
+};
+
+function setup(ui: ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
+describe("DashboardPage", () => {
+  it("渲染五张 KPI 卡与关键数值、预估标注", async () => {
+    vi.mocked(get).mockResolvedValue(data);
+    setup(<DashboardPage />);
+    expect(await screen.findByText("123456.78")).toBeInTheDocument();
+    expect(screen.getByText(zh["dash.kpiCloud"] ?? "")).toBeInTheDocument();
+    expect(screen.getByText(zh["dash.kpiEvent"] ?? "")).toBeInTheDocument();
+    expect(screen.getByText(zh["dash.estimateTag"] ?? "")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument(); // 待处理事件=未读
+    expect(screen.getByTestId(`chart:${zh["dash.trendTitle"]}`)).toBeInTheDocument();
+    expect(screen.getByText("prod-main")).toBeInTheDocument();
+  });
+  it("接口失败展示重试入口", async () => {
+    vi.mocked(get).mockRejectedValue(new Error("boom"));
+    setup(<DashboardPage />);
+    expect(await screen.findByText(zh["common.loadFail"] ?? "")).toBeInTheDocument();
+    expect(screen.getByText(zh["common.retry"] ?? "")).toBeInTheDocument();
+  });
+});

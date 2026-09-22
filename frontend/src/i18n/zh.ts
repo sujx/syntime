@@ -65,6 +65,7 @@ export const zh: Record<string, string> = {
   "dash.stopped": "已停止",
   "dash.high": "高危",
   "dash.warning": "警告",
+  "dash.ratio": "占比",
   "dash.syncOk": "正常",
   "dash.syncFail": "失败",
   "dash.syncRunning": "同步中",

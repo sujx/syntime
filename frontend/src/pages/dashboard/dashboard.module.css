@@ -1,0 +1,104 @@
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+@media (max-width: 1399px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 1023px) {
+  .kpiGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.kpi {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--gray-200, #e2e8f0);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+  transition:
+    box-shadow 250ms ease-out,
+    transform 250ms ease-out;
+}
+.kpi:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.bar {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-500, #6366f1), var(--primary-700, #4338ca));
+}
+.label {
+  font-size: 13px;
+  color: var(--gray-600, #475569);
+}
+.value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gray-900, #0f172a);
+  line-height: 1.2;
+  margin: var(--space-2) 0;
+}
+.sub {
+  font-size: 12px;
+  color: var(--gray-500, #64748b);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.pill {
+  border-radius: 9999px;
+  font-size: 12px;
+  padding: 1px 8px;
+}
+.up {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.down {
+  background: #ecfdf5;
+  color: #059669;
+}
+.neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.cols {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 1199px) {
+  .cols {
+    grid-template-columns: 1fr;
+  }
+}
+.syncRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--gray-100, #f1f5f9);
+  font-size: 13px;
+}
+.time {
+  color: var(--gray-500, #64748b);
+  font-variant-numeric: tabular-nums;
+}
