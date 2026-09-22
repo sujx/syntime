@@ -9,6 +9,7 @@ export const zh: Record<string, string> = {
   "login.password": "密码",
   "login.remember": "记住账号",
   "login.submit": "登 录",
+  "login.or": "或",
   "login.agreement": "登录即代表同意《服务条款》与《隐私政策》",
   "login.sso": "企业 SSO 登录（即将开放）",
   "login.smsTodo": "短信登录尚未开放，请使用账号密码登录",
@@ -35,7 +36,7 @@ export const zh: Record<string, string> = {
   "shell.userMenu": "用户菜单",
 
   "placeholder.phase2": "二期规划",
-  "placeholder.phase2Note": "二期规划能力，当前版本仅作占位展示：",
+  "placeholder.phase2Note": "二期规划能力，当前版本仅作占位展示",
   "placeholder.dataWiring": "数据接线在下一期",
 
   "import.sectionTitle": "账单导入",

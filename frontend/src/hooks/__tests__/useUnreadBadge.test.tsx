@@ -50,7 +50,19 @@ describe("useUnreadBadge", () => {
   });
   it("40300 等错误静默归零（财务角色接口可用，此为防御）", async () => {
     mock.onGet(/\/events\//).reply(200, { code: 40300, message: "无权限", data: null });
-    const { result } = renderHook(() => useUnreadBadge(true), { wrapper });
-    await waitFor(() => expect(result.current).toBe(0));
+    // 独立可控的 QueryClient：先确认查询真正进入 error 态，再断言徽标归零，
+    // 避免 t=0（pending、data 尚为 undefined）时 expect(0) 空真
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useUnreadBadge(true), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() =>
+      expect(qc.getQueryCache().find({ queryKey: ["events", "unread-badge"] })?.state.status).toBe(
+        "error",
+      ),
+    );
+    expect(result.current).toBe(0);
   });
 });

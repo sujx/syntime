@@ -141,7 +141,7 @@ export default function LoginPage() {
           />
         )}
         <div className={styles.agree}>{zh["login.agreement"]}</div>
-        <div className={styles.divider}>或</div>
+        <div className={styles.divider}>{zh["login.or"]}</div>
         <Button className={styles.sso} block disabled aria-hidden>
           {zh["login.sso"]}
         </Button>

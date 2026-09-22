@@ -19,7 +19,7 @@ const columns: ColumnsType<Row> = [
     title: "操作",
     dataIndex: "action",
     key: "action",
-    render: () => <span className="mono">{zh["placeholder.phase2Note"]}…</span>,
+    render: () => <span className="mono">{zh["placeholder.phase2Note"]}</span>,
   },
 ];
 
