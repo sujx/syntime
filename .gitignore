@@ -19,8 +19,13 @@ media/
 # Node / frontend
 node_modules/
 dist/
+coverage/
+*.tsbuildinfo
 
 # IDE / OS
 .idea/
 .vscode/
 .DS_Store
+
+# SDD scratch
+.superpowers/
