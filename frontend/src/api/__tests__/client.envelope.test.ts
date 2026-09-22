@@ -77,6 +77,17 @@ describe("错误码分流（读 code 不读 HTTP 状态）", () => {
     expect(toast).toHaveBeenCalledWith("网络异常，请稍后重试");
   });
 
+  it("超时归一为 code=-1 并 toast 中文提示", async () => {
+    mock.onGet("/slow/").timeout();
+    const err = (await call({ method: "get", url: "/slow/" }).catch(
+      (e: unknown) => e as BizError,
+    )) as BizError;
+    expect(err).toBeInstanceOf(BizError);
+    expect(err.code).toBe(-1);
+    expect(err.message).toBe("请求超时，请稍后重试");
+    expect(toast).toHaveBeenCalledWith("请求超时，请稍后重试");
+  });
+
   it("GET params 序列化进 URL", async () => {
     let seen = "";
     mock.onGet(/\/assets\//).reply((cfg) => {
