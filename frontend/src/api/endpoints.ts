@@ -7,6 +7,6 @@ export const API = {
   eventStatus: "/events/status/",
   assets: "/assets/",
   costSummary: "/cost/summary/",
-  costDetail: "/cost/detail/",
+  costDetail: "/cost/details/",
   costTrend: "/cost/trend/",
 } as const;

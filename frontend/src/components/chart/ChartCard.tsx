@@ -1,8 +1,20 @@
-import * as echarts from "echarts";
+import * as echarts from "echarts/core";
+import { BarChart, LineChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
 import type { EChartsOption } from "echarts";
 import { zh } from "@/i18n/zh";
 import styles from "./ChartCard.module.css";
+
+echarts.use([
+  BarChart,
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  CanvasRenderer,
+]);
 
 export function ChartCard({
   title,
