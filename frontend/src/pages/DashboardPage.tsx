@@ -33,7 +33,7 @@ export default function DashboardPage() {
         ) : null}
       </h1>
       {isPending ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
-      {isError ? (
+      {isError && !data ? (
         <Empty description={zh["common.loadFail"]}>
           <Button autoInsertSpace={false} onClick={() => void refetch()}>
             {zh["common.retry"]}
