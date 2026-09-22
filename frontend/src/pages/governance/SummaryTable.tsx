@@ -59,6 +59,7 @@ export function SummaryTable({
       title: zh["gov.colTag"],
       dataIndex: "projectTag",
       key: "projectTag",
+      fixed: "left",
       sorter: true,
       sortOrder: toSortOrder(filters, "projectTag"),
     },
@@ -135,6 +136,7 @@ export function SummaryTable({
         loading={isFetching}
         columns={columns}
         dataSource={data?.list ?? []}
+        scroll={{ x: "max-content" }}
         locale={{ emptyText: zh["gov.empty"] }}
         pagination={{
           current: filters.page ?? 1,

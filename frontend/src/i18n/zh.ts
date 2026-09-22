@@ -89,6 +89,7 @@ export const zh: Record<string, string> = {
   "gov.budgetIncomplete": "（部分账期未配置）",
   "gov.empty": "暂无项目成本数据，请调整筛选条件",
   "gov.pendingFilter": "云账号/地域/项目标签精确筛选待下拉接口（接口4）接通后开放",
+  "gov.projectTagExact": "项目标签（精确）",
   "gov.trendTitle": "成本趋势",
   "gov.showCompare": "对比上期",
   "gov.estNote": "当月数据为预估",

@@ -38,6 +38,18 @@ Object.defineProperty(window, "matchMedia", {
   }),
 });
 
+// jsdom 的 getComputedStyle 极慢且 rc-table scroll.x 触发的伪元素测量未实现，
+// 用轻量桩替换：role 查询的隐藏元素计算与滚动条测量均走此函数
+const fakeStyle = {
+  getPropertyValue: () => "",
+  display: "block",
+  visibility: "visible",
+  width: "0px",
+  height: "0px",
+  overflow: "visible",
+};
+window.getComputedStyle = (() => fakeStyle) as unknown as typeof window.getComputedStyle;
+
 const summaryData = {
   total: 2,
   page: 1,
@@ -101,18 +113,23 @@ describe("GovernancePage 汇总", () => {
         expect.objectContaining({ startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
       ),
     );
-    expect(await screen.findByText("云服务器 ECS费用")).toBeInTheDocument();
+    // 使用 role 查询避免 MeasureRow 中重复的 th
+    expect(
+      await screen.findByRole("columnheader", { name: "云服务器 ECS费用" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(zh["gov.totalPrefix"] ?? "")).toBeInTheDocument();
     expect(await screen.findByText(/1000\.00/)).toBeInTheDocument();
     expect(screen.getByText("150.00")).toBeInTheDocument();
     // 未分配行金额为空字典 → 动态列显示 --
     expect(screen.getAllByText("--").length).toBeGreaterThan(0);
   });
-  it("排序走服务端参数", async () => {
+  it("排序三态：升序→降序→取消", async () => {
     vi.mocked(get).mockResolvedValue(summaryData);
     setup(<GovernancePage />);
     await screen.findByText("150.00");
     vi.mocked(get).mockClear();
+
+    // 第一次点击：升序
     await userEvent.click(screen.getByRole("columnheader", { name: /项目总支出/ }));
     await waitFor(() =>
       expect(vi.mocked(get)).toHaveBeenCalledWith(
@@ -120,6 +137,26 @@ describe("GovernancePage 汇总", () => {
         expect.objectContaining({ sortField: "totalAmount", sortOrder: "asc" }),
       ),
     );
+    vi.mocked(get).mockClear();
+
+    // 第二次点击：降序
+    await userEvent.click(screen.getByRole("columnheader", { name: /项目总支出/ }));
+    await waitFor(() =>
+      expect(vi.mocked(get)).toHaveBeenCalledWith(
+        "/cost/summary/",
+        expect.objectContaining({ sortField: "totalAmount", sortOrder: "desc" }),
+      ),
+    );
+    vi.mocked(get).mockClear();
+
+    // 第三次点击：取消排序（无 sortField/sortOrder）
+    await userEvent.click(screen.getByRole("columnheader", { name: /项目总支出/ }));
+    await waitFor(() => expect(vi.mocked(get)).toHaveBeenCalled());
+    const calls = vi.mocked(get).mock.calls;
+    const lastArgs = calls[calls.length - 1]?.[1] as Record<string, unknown> | undefined;
+    expect(lastArgs).toBeDefined();
+    expect(lastArgs).not.toHaveProperty("sortField");
+    expect(lastArgs).not.toHaveProperty("sortOrder");
   });
   it("关键字搜索提交后带 keyword 重查", async () => {
     vi.mocked(get).mockResolvedValue(summaryData);
@@ -133,5 +170,14 @@ describe("GovernancePage 汇总", () => {
         expect.objectContaining({ keyword: "A" }),
       ),
     );
+  });
+  it("点击行显示 detail-anchor", async () => {
+    vi.mocked(get).mockResolvedValue(summaryData);
+    setup(<GovernancePage />);
+    await screen.findByText("150.00");
+    expect(screen.queryByTestId("detail-anchor")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText("项目A"));
+    const anchor = await screen.findByTestId("detail-anchor");
+    expect(anchor).toHaveTextContent("项目A");
   });
 });

@@ -1,4 +1,4 @@
-import { Input, Segmented, Select } from "antd";
+import { Input, Segmented, Select, Tooltip } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useState } from "react";
 import type { ResourceTypeInfo } from "@/api/types";
@@ -67,6 +67,25 @@ export function FilterCard({
           ...resourceTypes.map((r) => ({ value: r.code, label: r.displayName })),
         ]}
       />
+      <Tooltip title={zh["gov.pendingFilter"]}>
+        <Select
+          disabled
+          style={{ minWidth: 120 }}
+          placeholder={zh["gov.colAccount"]}
+          options={[]}
+        />
+      </Tooltip>
+      <Tooltip title={zh["gov.pendingFilter"]}>
+        <Select disabled style={{ minWidth: 100 }} placeholder={zh["gov.colRegion"]} options={[]} />
+      </Tooltip>
+      <Tooltip title={zh["gov.pendingFilter"]}>
+        <Select
+          disabled
+          style={{ minWidth: 140 }}
+          placeholder={zh["gov.projectTagExact"]}
+          options={[]}
+        />
+      </Tooltip>
     </div>
   );
 }
