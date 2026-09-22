@@ -15,6 +15,7 @@ export const zh: Record<string, string> = {
   "login.heroFeat1": "多云账单自动归集",
   "login.heroFeat2": "项目 / 部门成本分摊",
   "login.heroFeat3": "预算与异常洞察",
+  "login.fail": "登录失败，请重试",
   "login.copyright": "© 2026 SynTime · 与时偕行",
 
   "nav.groupCost": "成本分析",
