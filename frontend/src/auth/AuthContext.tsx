@@ -47,12 +47,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokenProvider(tokenStore.getAccess);
     configureRefresh({
       // 会话恢复后 access 可能尚为 null：只要有 refresh 就返回对（access 占位空串），
-      // 刷新成功回调 onAccessRotated 会以真实 access 覆盖
+      // 刷新成功回调 onTokensRotated 会写回轮换后的 access 与新 refresh
+      // （后端 ROTATE_REFRESH_TOKENS=True，旧 refresh 轮换即拉黑，必须同步落盘）
       tokenReader: () => {
         const refresh = tokenStore.getRefresh();
         return refresh ? { access: tokenStore.getAccess() ?? "", refresh } : null;
       },
-      onAccessRotated: (access) => tokenStore.setAccess(access),
+      onTokensRotated: (access, refresh) => {
+        tokenStore.setAccess(access);
+        tokenStore.setRefresh(refresh);
+      },
       onSessionLost: () => {
         // 可被并发请求链重复触发：清空 + 复位天然幂等，无需加锁
         tokenStore.clear();

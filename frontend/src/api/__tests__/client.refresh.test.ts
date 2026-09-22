@@ -15,7 +15,7 @@ let mock: MockAdapter;
 let bareMock: MockAdapter;
 let store: { pair: TokenPair | null };
 let sessionLost: () => void;
-let rotated: (a: string) => void;
+let rotated: (a: string, r: string) => void;
 let refreshPosts: number;
 let authHeaderSeen: string | undefined;
 
@@ -33,7 +33,7 @@ beforeEach(() => {
   setTokenProvider(() => store.pair?.access ?? null);
   configureRefresh({
     tokenReader: () => store.pair,
-    onAccessRotated: (access) => rotated(access),
+    onTokensRotated: (access, refresh) => rotated(access, refresh),
     onSessionLost: () => sessionLost(),
   });
 });
@@ -86,6 +86,9 @@ it("刷新成功后第三个请求直接复用新 access", async () => {
   await expect(call({ method: "get", url: "/ping/" })).resolves.toBe("pong");
   expect(refreshPosts).toBe(1);
   expect(hits).toBe(3);
+  // 后端 ROTATE_REFRESH_TOKENS=True：轮换后的新 refresh 必须交回上层持久化，
+  // 否则下次刷新/登出会重发已拉黑的旧 token
+  expect(rotated).toHaveBeenCalledWith("A-2", "R-2");
 });
 
 it("刷新失败：reject 40100 且 onSessionLost 恰好一次", async () => {

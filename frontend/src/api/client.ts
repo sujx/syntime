@@ -33,7 +33,7 @@ export interface TokenPair {
 
 export interface RefreshConfig {
   tokenReader: () => TokenPair | null;
-  onAccessRotated: (access: string) => void;
+  onTokensRotated: (access: string, refresh: string) => void;
   onSessionLost: () => void;
 }
 
@@ -157,7 +157,7 @@ api.interceptors.response.use(unwrapFulfilled, async (error: unknown) => {
   if (isUnauth && config && !config._retriedAfterRefresh && !isAuthFree(config.url)) {
     const rotated = await tryRefresh();
     if (rotated) {
-      refreshConfig?.onAccessRotated(rotated.access);
+      refreshConfig?.onTokensRotated(rotated.access, rotated.refresh);
       config._retriedAfterRefresh = true;
       // 重放前手动覆盖 Authorization（请求拦截器对带标记的 config 不再注入）
       config.headers = AxiosHeaders.from(config.headers).set(
