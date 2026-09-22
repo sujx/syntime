@@ -18,7 +18,7 @@ export function TrendCard({ filters }: { filters: GovernanceFilters }) {
         title={zh["gov.trendTitle"] ?? ""}
         extra={
           data
-            ? `${data.statRange.start} ~ ${data.statRange.end}${data.billMonthIncomplete ? ` · ${zh["gov.estNote"]}` : ""}`
+            ? `${data.statRange.start} ~ ${data.statRange.end}${data.billMonthIncomplete ? ` · ${zh["gov.estNote"] ?? ""}` : ""}`
             : undefined
         }
         option={hasData && data ? buildProjectTrendOption(data, showCompare) : undefined}
@@ -39,10 +39,12 @@ export function TrendCard({ filters }: { filters: GovernanceFilters }) {
           onChange={setShowCompare}
           aria-label={zh["gov.showCompare"]}
         />
-        <span style={{ fontSize: 12, color: "var(--gray-600)" }}>{zh["gov.showCompare"]}</span>
+        <span style={{ fontSize: 12, color: "var(--gray-600)" }}>
+          {zh["gov.showCompare"] ?? ""}
+        </span>
         {!hasData ? (
           <span style={{ fontSize: 12, color: "var(--gray-400)", marginLeft: "auto" }}>
-            {zh["gov.empty"]}
+            {zh["gov.empty"] ?? ""}
           </span>
         ) : null}
       </div>

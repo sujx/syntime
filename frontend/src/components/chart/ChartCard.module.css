@@ -20,12 +20,18 @@
   font-size: 12px;
   color: var(--gray-500);
 }
+.body {
+  position: relative;
+}
 .pending {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--gray-400);
   font-size: 13px;
+  background: #fff;
   border: 1px dashed var(--gray-300);
   border-radius: var(--radius-md);
 }

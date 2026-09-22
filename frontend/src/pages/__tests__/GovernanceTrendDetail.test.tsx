@@ -118,7 +118,10 @@ describe("趋势卡 + 明细抽屉", () => {
     expect(vi.mocked(get).mock.calls.some((c) => c[0] === "/cost/details/")).toBe(false);
     await userEvent.click(await screen.findByText("A"));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(new RegExp(zh["gov.detailTitle"] ?? ""))).toBeInTheDocument();
+    // 组合标题「成本明细 · A」需携带被点击行的 projectTag，钉死下钻对象
+    expect(
+      within(dialog).getByText(new RegExp(`${zh["gov.detailTitle"] ?? ""}.*A`)),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(vi.mocked(get)).toHaveBeenCalledWith(
         "/cost/details/",

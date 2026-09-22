@@ -45,13 +45,11 @@ export function ChartCard({
         <span className={styles.title}>{title}</span>
         {extra && <span className={styles.extra}>{extra}</span>}
       </div>
-      {option ? (
-        <div ref={el} style={{ height }} />
-      ) : (
-        <div className={styles.pending} style={{ height }}>
-          {zh["chart.pending"]}
-        </div>
-      )}
+      {/* §5.6-9：图表宿主节点常驻不销毁，空态以绝对定位覆盖层呈现 */}
+      <div className={styles.body}>
+        <div ref={el} data-testid={`chart:${title}`} style={{ height }} />
+        {option ? null : <div className={styles.pending}>{zh["chart.pending"] ?? ""}</div>}
+      </div>
     </section>
   );
 }

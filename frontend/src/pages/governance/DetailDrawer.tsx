@@ -19,16 +19,20 @@ export function DetailDrawer({ row, onClose }: { row: SummaryRow | null; onClose
   );
   const columns: TableProps<DetailRow>["columns"] = [
     {
-      title: zh["gov.colInstance"],
+      title: zh["gov.colInstance"] ?? "",
       dataIndex: "instanceId",
       render: (v: string | null) => <span className={styles.mono}>{v ?? "--"}</span>,
     },
-    { title: zh["gov.resourceType"], dataIndex: "resourceType" },
-    { title: zh["gov.colAccount"], dataIndex: "cloudAccountName" },
-    { title: zh["gov.colRegion"], dataIndex: "region" },
-    { title: zh["gov.colAmount"], dataIndex: "amount" },
-    { title: zh["gov.colCharge"], dataIndex: "chargeType" },
-    { title: zh["gov.colTagStatus"], dataIndex: "tagStatus" },
+    { title: zh["gov.resourceType"] ?? "", dataIndex: "resourceType" },
+    { title: zh["gov.colAccount"] ?? "", dataIndex: "cloudAccountName" },
+    {
+      title: zh["gov.colRegion"] ?? "",
+      dataIndex: "region",
+      render: (v: string | null) => v ?? "--",
+    },
+    { title: zh["gov.colAmount"] ?? "", dataIndex: "amount" },
+    { title: zh["gov.colCharge"] ?? "", dataIndex: "chargeType" },
+    { title: zh["gov.colTagStatus"] ?? "", dataIndex: "tagStatus" },
   ];
   return (
     <Drawer
@@ -37,9 +41,9 @@ export function DetailDrawer({ row, onClose }: { row: SummaryRow | null; onClose
         setPage(1);
         onClose();
       }}
-      destroyOnClose
+      destroyOnHidden
       width={560}
-      title={`${zh["gov.detailTitle"]} · ${row?.projectTag ?? ""}`}
+      title={`${zh["gov.detailTitle"] ?? ""} · ${row?.projectTag ?? ""}`}
     >
       <Table<DetailRow>
         rowKey={(r) => `${r.instanceId ?? "-"}|${r.resourceType}`}
