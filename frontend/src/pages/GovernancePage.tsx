@@ -4,6 +4,8 @@ import type { GovernanceFilters } from "@/features/governance/hooks";
 import { zh } from "@/i18n/zh";
 import { FilterCard, quickRange } from "./governance/FilterCard";
 import { SummaryTable } from "./governance/SummaryTable";
+import { TrendCard } from "./governance/TrendCard";
+import { DetailDrawer } from "./governance/DetailDrawer";
 
 export default function GovernancePage() {
   const [s, e] = quickRange("thisMonth");
@@ -19,13 +21,14 @@ export default function GovernancePage() {
         {zh["nav.governance"]}
       </h1>
       <FilterCard value={filters} resourceTypes={resourceTypes} onChange={setFilters} />
+      <TrendCard filters={filters} />
       <SummaryTable
         filters={filters}
         onFiltersChange={setFilters}
         onRowOpen={setDetailRow}
         onTypes={setResourceTypes}
       />
-      {detailRow ? <span data-testid="detail-anchor">{detailRow.projectTag}</span> : null}
+      <DetailDrawer row={detailRow} onClose={() => setDetailRow(null)} />
     </div>
   );
 }

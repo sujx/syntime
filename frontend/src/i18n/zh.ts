@@ -101,6 +101,7 @@ export const zh: Record<string, string> = {
   "gov.colAmount": "金额（元）",
   "gov.colCharge": "计费类型",
   "gov.colStatus": "状态",
+  "gov.colTagStatus": "标签状态",
   "gov.feeSuffix": "费用",
   "gov.paginationInfo": "第 {from}-{to} 条，共 {total} 条",
 

@@ -23,32 +23,7 @@ import { get } from "@/api/client";
 import GovernancePage from "@/pages/GovernancePage";
 import { zh } from "@/i18n/zh";
 
-// jsdom 未实现 matchMedia，antd Table 响应式观察器依赖它
-Object.defineProperty(window, "matchMedia", {
-  writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
-});
-
-// jsdom 的 getComputedStyle 极慢且 rc-table scroll.x 触发的伪元素测量未实现，
-// 用轻量桩替换：role 查询的隐藏元素计算与滚动条测量均走此函数
-const fakeStyle = {
-  getPropertyValue: () => "",
-  display: "block",
-  visibility: "visible",
-  width: "0px",
-  height: "0px",
-  overflow: "visible",
-};
-window.getComputedStyle = (() => fakeStyle) as unknown as typeof window.getComputedStyle;
+// matchMedia / getComputedStyle 桩已提升至 src/test/setup.ts（多文件共用）
 
 const summaryData = {
   total: 2,
@@ -103,9 +78,28 @@ function setup(ui: ReactNode) {
   );
 }
 
+// Task 4 装配 TrendCard/DetailDrawer 后本页会并发请求 trend/details，
+// 统一按 URL 分流返回，避免把汇总数据喂给趋势卡导致字段缺失崩溃
+const trendData = {
+  current: [],
+  compare: [],
+  statRange: { start: "2026-09-01", end: "2026-09-21" },
+  compareRange: { start: "2026-08-01", end: "2026-08-21" },
+  billMonthIncomplete: false,
+};
+function mockRoutes() {
+  vi.mocked(get).mockImplementation((url: string) =>
+    url === "/cost/trend/"
+      ? Promise.resolve(trendData)
+      : url === "/cost/details/"
+        ? Promise.resolve({ total: 0, page: 1, pageSize: 20, list: [] })
+        : Promise.resolve(summaryData),
+  );
+}
+
 describe("GovernancePage 汇总", () => {
   it("首查默认本月区间并渲染动态列与合计标题区", async () => {
-    vi.mocked(get).mockResolvedValue(summaryData);
+    mockRoutes();
     setup(<GovernancePage />);
     await waitFor(() =>
       expect(vi.mocked(get)).toHaveBeenCalledWith(
@@ -124,7 +118,7 @@ describe("GovernancePage 汇总", () => {
     expect(screen.getAllByText("--").length).toBeGreaterThan(0);
   });
   it("排序三态：升序→降序→取消", async () => {
-    vi.mocked(get).mockResolvedValue(summaryData);
+    mockRoutes();
     setup(<GovernancePage />);
     await screen.findByText("150.00");
     vi.mocked(get).mockClear();
@@ -159,7 +153,7 @@ describe("GovernancePage 汇总", () => {
     expect(lastArgs).not.toHaveProperty("sortOrder");
   });
   it("关键字搜索提交后带 keyword 重查", async () => {
-    vi.mocked(get).mockResolvedValue(summaryData);
+    mockRoutes();
     setup(<GovernancePage />);
     await screen.findByText("150.00");
     vi.mocked(get).mockClear();
@@ -171,13 +165,13 @@ describe("GovernancePage 汇总", () => {
       ),
     );
   });
-  it("点击行显示 detail-anchor", async () => {
-    vi.mocked(get).mockResolvedValue(summaryData);
+  it("点击行打开明细抽屉（Task 4 计划内演进：detail-anchor 已删除）", async () => {
+    mockRoutes();
     setup(<GovernancePage />);
     await screen.findByText("150.00");
-    expect(screen.queryByTestId("detail-anchor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByText("项目A"));
-    const anchor = await screen.findByTestId("detail-anchor");
-    expect(anchor).toHaveTextContent("项目A");
+    // 抽屉标题为「成本明细 · 项目A」组合串，用部分匹配断标题出现
+    expect(await screen.findByText(new RegExp(zh["gov.detailTitle"] ?? ""))).toBeInTheDocument();
   });
 });
