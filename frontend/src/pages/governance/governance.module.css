@@ -1,0 +1,81 @@
+.card {
+  background: #fff;
+  border: 1px solid var(--gray-200, #e2e8f0);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+}
+@media (max-width: 1199px) {
+  .filterGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.headTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gray-900, #0f172a);
+}
+.headMeta {
+  font-size: 12px;
+  color: var(--gray-500, #64748b);
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.total strong {
+  color: var(--gray-900, #0f172a);
+  font-variant-numeric: tabular-nums;
+}
+.bold {
+  font-weight: 600;
+}
+.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+}
+.muted {
+  color: var(--gray-400, #94a3b8);
+  font-size: 12px;
+}
+.rateUp {
+  color: #dc2626;
+}
+.rateDown {
+  color: #059669;
+}
+.budgetBar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--gray-100, #f1f5f9);
+  margin-top: 4px;
+  overflow: hidden;
+}
+.budgetFill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary-600, #4f46e5);
+}
+.budgetFillOver {
+  background: #ef4444;
+}
+.overRow td {
+  background: #fff7ed;
+}
+.rowClickable {
+  cursor: pointer;
+}
