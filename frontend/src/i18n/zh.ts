@@ -33,7 +33,6 @@ export const zh: Record<string, string> = {
 
   "shell.logout": "退出登录",
   "shell.syncChip": "数据同步正常",
-  "shell.userMenu": "用户菜单",
 
   "placeholder.phase2": "二期规划",
   "placeholder.phase2Note": "二期规划能力，当前版本仅作占位展示",

@@ -40,7 +40,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // 幂等接线：onSessionLost 会把 setTokenProvider/configureRefresh 双双置 null，
+  // 而 Provider 包裹 RouterProvider 永不卸载——mount effect 与 login 成功都必须调用它，
+  // 否则会话丢失后重新登录的请求层不带 Authorization（僵尸会话）
+  const wireClient = useCallback(() => {
     setTokenProvider(tokenStore.getAccess);
     configureRefresh({
       // 会话恢复后 access 可能尚为 null：只要有 refresh 就返回对（access 占位空串），
@@ -60,6 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(null);
       },
     });
+  }, []);
+
+  useEffect(() => {
+    wireClient();
     const session = tokenStore.readSession();
     if (session && tokenStore.getRefresh()) {
       setUsername(session.username);
@@ -73,28 +80,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTokenProvider(null);
       configureRefresh(null);
     };
-  }, []);
+  }, [wireClient]);
 
-  const login = useCallback(async (name: string, password: string) => {
-    setError(null);
-    try {
-      const data = await post<LoginData>(API.token, { username: name, password });
-      if (!isRole(data.role)) {
-        const msg = "该账号未分配平台角色";
-        setError(msg);
-        throw new BizError(msg, 40001, 400);
+  const login = useCallback(
+    async (name: string, password: string) => {
+      setError(null);
+      try {
+        const data = await post<LoginData>(API.token, { username: name, password });
+        if (!isRole(data.role)) {
+          const msg = "该账号未分配平台角色";
+          setError(msg);
+          throw new BizError(msg, 40001, 400);
+        }
+        tokenStore.setAccess(data.access);
+        tokenStore.setRefresh(data.refresh);
+        tokenStore.writeSession({ username: data.username, role: data.role });
+        // 成功登录后重接请求层：onSessionLost 曾拆除接线，仅靠 mount effect 无法恢复
+        wireClient();
+        setUsername(data.username);
+        setRole(data.role);
+        setStatus("authenticated");
+      } catch (err) {
+        if (err instanceof BizError) setError(err.message);
+        throw err;
       }
-      tokenStore.setAccess(data.access);
-      tokenStore.setRefresh(data.refresh);
-      tokenStore.writeSession({ username: data.username, role: data.role });
-      setUsername(data.username);
-      setRole(data.role);
-      setStatus("authenticated");
-    } catch (err) {
-      if (err instanceof BizError) setError(err.message);
-      throw err;
-    }
-  }, []);
+    },
+    [wireClient],
+  );
 
   const logout = useCallback(async () => {
     const refresh = tokenStore.getRefresh();
