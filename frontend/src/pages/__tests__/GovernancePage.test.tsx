@@ -165,6 +165,27 @@ describe("GovernancePage 汇总", () => {
       ),
     );
   });
+  it("自定义区间：RangePicker 提交后按新 startDate/endDate 重查（R2）", async () => {
+    mockRoutes();
+    setup(<GovernancePage />);
+    await screen.findByText("150.00");
+    vi.mocked(get).mockClear();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".ant-picker-range input");
+    expect(inputs.length).toBe(2);
+    await userEvent.click(inputs[0]!);
+    await userEvent.clear(inputs[0]!);
+    await userEvent.type(inputs[0]!, "2026-07-01{Enter}");
+    await userEvent.clear(inputs[1]!);
+    await userEvent.type(inputs[1]!, "2026-07-15{Enter}");
+
+    await waitFor(() =>
+      expect(vi.mocked(get)).toHaveBeenCalledWith(
+        "/cost/summary/",
+        expect.objectContaining({ startDate: "2026-07-01", endDate: "2026-07-15" }),
+      ),
+    );
+  });
   it("点击行打开明细抽屉（Task 4 计划内演进：detail-anchor 已删除）", async () => {
     mockRoutes();
     setup(<GovernancePage />);

@@ -1,4 +1,4 @@
-import { Input, Segmented, Select, Tooltip } from "antd";
+import { DatePicker, Input, Segmented, Select, Tooltip } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useState } from "react";
 import type { ResourceTypeInfo } from "@/api/types";
@@ -29,14 +29,16 @@ export function FilterCard({
   resourceTypes: ResourceTypeInfo[];
   onChange: (next: GovernanceFilters) => void;
 }) {
-  const [quick, setQuick] = useState<QuickKey>("thisMonth");
+  const [quick, setQuick] = useState<QuickKey | null>("thisMonth");
   const [keyword, setKeyword] = useState(value.keyword ?? "");
   const apply = (patch: Partial<GovernanceFilters>) =>
     onChange({ ...value, page: undefined, ...patch } as GovernanceFilters);
+  const range: [Dayjs, Dayjs] | null =
+    value.startDate && value.endDate ? [dayjs(value.startDate), dayjs(value.endDate)] : null;
   return (
     <div className={`${styles.card} ${styles.filterGrid}`} data-testid="gov-filter">
       <Segmented
-        value={quick}
+        value={quick ?? undefined}
         options={[
           { value: "thisMonth", label: zh["gov.quickThisMonth"] },
           { value: "lastMonth", label: zh["gov.quickLastMonth"] },
@@ -47,6 +49,18 @@ export function FilterCard({
           const key = q as QuickKey;
           setQuick(key);
           const [s, e] = quickRange(key);
+          apply({ startDate: s.format("YYYY-MM-DD"), endDate: e.format("YYYY-MM-DD") });
+        }}
+      />
+      <DatePicker.RangePicker
+        allowClear={false}
+        value={range}
+        style={{ minWidth: 240 }}
+        placeholder={[zh["gov.dateFrom"] ?? "", zh["gov.dateTo"] ?? ""]}
+        onChange={(next) => {
+          const [s, e] = next ?? [];
+          if (!s || !e) return;
+          setQuick(null);
           apply({ startDate: s.format("YYYY-MM-DD"), endDate: e.format("YYYY-MM-DD") });
         }}
       />

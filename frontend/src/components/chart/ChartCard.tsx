@@ -20,11 +20,13 @@ export function ChartCard({
   title,
   extra,
   option,
+  emptyText,
   height = 280,
 }: {
   title: string;
   extra?: string;
   option?: EChartsOption;
+  emptyText?: string;
   height?: number;
 }) {
   const el = useRef<HTMLDivElement | null>(null);
@@ -48,7 +50,9 @@ export function ChartCard({
       {/* §5.6-9：图表宿主节点常驻不销毁，空态以绝对定位覆盖层呈现 */}
       <div className={styles.body}>
         <div ref={el} data-testid={`chart:${title}`} style={{ height }} />
-        {option ? null : <div className={styles.pending}>{zh["chart.pending"] ?? ""}</div>}
+        {option ? null : (
+          <div className={styles.pending}>{emptyText ?? zh["chart.empty"] ?? ""}</div>
+        )}
       </div>
     </section>
   );

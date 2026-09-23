@@ -1,5 +1,6 @@
 import type { EChartsOption } from "echarts";
 import type { TrendData } from "@/api/types";
+import { zh } from "@/i18n/zh";
 import { CHART_PALETTE, COMPARE_LINE_COLOR, UNASSIGNED_COLOR, toMoneyNumber } from "./palette";
 
 export { toMoneyNumber };
@@ -67,7 +68,9 @@ function compareSeries(trend: TrendData) {
     return point.items.length > 0 ? Number(sum.toFixed(2)) : null;
   });
   return {
-    name: `上期(${trend.compareRange.start}~${trend.compareRange.end})`,
+    name: (zh["gov.compareSeries"] ?? "")
+      .replace("{start}", trend.compareRange.start)
+      .replace("{end}", trend.compareRange.end),
     type: "line" as const,
     data: totals,
     symbol: "none" as const,

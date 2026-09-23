@@ -4,6 +4,7 @@ import {
   buildResourceTrendOption,
   toMoneyNumber,
 } from "@/features/charts/trendOption";
+import { zh } from "@/i18n/zh";
 import type { TrendData } from "@/api/types";
 
 const trend: TrendData = {
@@ -54,6 +55,21 @@ describe("buildProjectTrendOption", () => {
       lineStyle?: { type?: string };
     }[];
     expect(noCmp.some((s) => s.lineStyle?.type === "dashed")).toBe(false);
+  });
+  it("对比序列名取自 i18n 模板，非代码内硬编码文案", () => {
+    const template = zh["gov.compareSeries"] ?? "";
+    expect(template).toContain("{start}");
+    expect(template).toContain("{end}");
+    const series = buildProjectTrendOption(trend, true).series as {
+      name: string;
+      lineStyle?: { type?: string };
+    }[];
+    const compare = series.find((s) => s.lineStyle?.type === "dashed");
+    expect(compare?.name).toBe(
+      template
+        .replace("{start}", trend.compareRange.start)
+        .replace("{end}", trend.compareRange.end),
+    );
   });
 });
 

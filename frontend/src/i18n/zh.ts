@@ -43,7 +43,7 @@ export const zh: Record<string, string> = {
   "import.dropHint": "拖拽或点击上传 CSV / Excel 账单文件",
   "import.templateHint": "各云厂商账单模板在二期提供",
 
-  "chart.pending": "图表数据接线在下一期",
+  "chart.empty": "暂无数据",
 
   "common.retry": "重试",
   "common.loadFail": "数据加载失败",
@@ -92,6 +92,10 @@ export const zh: Record<string, string> = {
   "gov.pendingFilter": "云账号/地域/项目标签精确筛选待下拉接口（接口4）接通后开放",
   "gov.projectTagExact": "项目标签（精确）",
   "gov.trendTitle": "成本趋势",
+  "gov.compareSeries": "上期({start}~{end})",
+  "gov.dateRange": "自定义区间",
+  "gov.dateFrom": "开始日期",
+  "gov.dateTo": "结束日期",
   "gov.showCompare": "对比上期",
   "gov.estNote": "当月数据为预估",
   "gov.detail": "明细",

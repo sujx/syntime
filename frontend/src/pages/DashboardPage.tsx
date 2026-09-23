@@ -88,6 +88,7 @@ export default function DashboardPage() {
             <ChartCard
               title={zh["dash.trendTitle"] ?? ""}
               extra={zh["dash.trendExtra"]}
+              emptyText={zh["gov.empty"]}
               option={
                 data.trend.current.length > 0 ? buildResourceTrendOption(data.trend) : undefined
               }

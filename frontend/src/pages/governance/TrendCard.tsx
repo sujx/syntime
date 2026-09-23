@@ -21,6 +21,7 @@ export function TrendCard({ filters }: { filters: GovernanceFilters }) {
             ? `${data.statRange.start} ~ ${data.statRange.end}${data.billMonthIncomplete ? ` · ${zh["gov.estNote"] ?? ""}` : ""}`
             : undefined
         }
+        emptyText={zh["gov.empty"]}
         option={hasData && data ? buildProjectTrendOption(data, showCompare) : undefined}
         height={300}
       />
@@ -42,11 +43,6 @@ export function TrendCard({ filters }: { filters: GovernanceFilters }) {
         <span style={{ fontSize: 12, color: "var(--gray-600)" }}>
           {zh["gov.showCompare"] ?? ""}
         </span>
-        {!hasData ? (
-          <span style={{ fontSize: 12, color: "var(--gray-400)", marginLeft: "auto" }}>
-            {zh["gov.empty"] ?? ""}
-          </span>
-        ) : null}
       </div>
     </section>
   );

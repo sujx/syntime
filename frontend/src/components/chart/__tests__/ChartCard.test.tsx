@@ -31,13 +31,19 @@ describe("ChartCard 空态与图表宿主节点（§5.6-9）", () => {
 
   it("空态以覆盖层呈现文案，且不替换宿主 div", () => {
     render(<ChartCard title="T" height={120} />);
-    expect(screen.getByText(zh["chart.pending"] ?? "")).toBeInTheDocument();
+    expect(screen.getByText(zh["chart.empty"] ?? "")).toBeInTheDocument();
     expect(screen.getByTestId("chart:T")).toBeInTheDocument();
+  });
+
+  it("emptyText 覆盖默认空态文案（R8：趋势空态展示业务文案而非占位串）", () => {
+    render(<ChartCard title="T" height={120} emptyText={zh["gov.empty"] ?? ""} />);
+    expect(screen.getByText(zh["gov.empty"] ?? "")).toBeInTheDocument();
+    expect(screen.queryByText(zh["chart.empty"] ?? "")).not.toBeInTheDocument();
   });
 
   it("有数据时不渲染空态覆盖层", () => {
     render(<ChartCard title="T" height={120} option={option} />);
-    expect(screen.queryByText(zh["chart.pending"] ?? "")).not.toBeInTheDocument();
+    expect(screen.queryByText(zh["chart.empty"] ?? "")).not.toBeInTheDocument();
     expect(initMock).toHaveBeenCalled();
   });
 });
