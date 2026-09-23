@@ -95,7 +95,8 @@ export interface SyncAccount {
   accountName: string;
   vendor: string;
   lastSyncTime: string | null;
-  status: string;
+  /** success / running / failed；为 null 表示该账号尚无同步日志（「无记录」态，见 ui-spec 5.16） */
+  status: string | null;
 }
 
 export interface SyncStatusData {

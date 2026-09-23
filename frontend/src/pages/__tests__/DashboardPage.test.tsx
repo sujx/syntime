@@ -18,6 +18,7 @@ vi.mock("@/hooks/useAuth", () => ({
 }));
 
 import { get } from "@/api/client";
+import type { SyncAccount } from "@/api/types";
 import DashboardPage from "@/pages/DashboardPage";
 import { zh } from "@/i18n/zh";
 import { localText } from "@/test/localTime";
@@ -64,6 +65,23 @@ function setup(ui: ReactNode) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
+function account(accountName: string, status: string | null, vendor = "aliyun"): SyncAccount {
+  return {
+    accountName,
+    vendor,
+    lastSyncTime: status === null ? null : "2026-09-20T18:30:00Z",
+    status,
+  };
+}
+
+function renderAccounts(accounts: SyncAccount[]) {
+  vi.mocked(get).mockResolvedValue({
+    ...data,
+    syncStatus: { lastAggregateTime: null, accounts },
+  });
+  setup(<DashboardPage />);
+}
+
 describe("DashboardPage", () => {
   it("渲染五张 KPI 卡与关键数值、预估标注", async () => {
     vi.mocked(get).mockResolvedValue(data);
@@ -78,6 +96,63 @@ describe("DashboardPage", () => {
     // 同步块两处时间都按本地时区渲染；后端序列化的是 UTC，不可直接切片
     expect(screen.getByText(localText("2026-09-20T19:00:00Z"))).toBeInTheDocument();
     expect(screen.getByText(localText("2026-09-20T18:30:00Z"))).toBeInTheDocument();
+  });
+  it("状态为空（无同步记录）的账号圆点取中性灰，不得显示为成功绿", async () => {
+    vi.mocked(get).mockResolvedValue({
+      ...data,
+      syncStatus: {
+        lastAggregateTime: null,
+        accounts: [
+          { accountName: "prod-none", vendor: "aliyun", lastSyncTime: null, status: null },
+        ],
+      },
+    });
+    setup(<DashboardPage />);
+    const dot = await screen.findByTestId("sync-dot-aliyun-prod-none");
+    expect(dot.style.background).toBe("var(--gray-400)");
+  });
+  it("同步成功/同步中/同步失败三态圆点取 design.md 语义色 Token", async () => {
+    renderAccounts([
+      account("acc-ok", "success"),
+      account("acc-syncing", "running"),
+      account("acc-failed", "failed"),
+    ]);
+    expect((await screen.findByTestId("sync-dot-aliyun-acc-ok")).style.background).toBe(
+      "var(--success-500)",
+    );
+    expect(screen.getByTestId("sync-dot-aliyun-acc-syncing").style.background).toBe(
+      "var(--warning-500)",
+    );
+    expect(screen.getByTestId("sync-dot-aliyun-acc-failed").style.background).toBe(
+      "var(--danger-500)",
+    );
+  });
+  it("状态文字随圆点四态显示", async () => {
+    renderAccounts([
+      account("acc-ok", "success"),
+      account("acc-syncing", "running"),
+      account("acc-failed", "failed"),
+      account("acc-none", null),
+    ]);
+    await screen.findByTestId("sync-row-aliyun-acc-ok");
+    const stateText = (name: string) =>
+      screen.getByTestId(`sync-row-aliyun-${name}`).textContent ?? "";
+    expect(stateText("acc-ok")).toContain(zh["dash.syncOk"]);
+    expect(stateText("acc-syncing")).toContain(zh["dash.syncRunning"]);
+    expect(stateText("acc-failed")).toContain(zh["dash.syncFail"]);
+    expect(stateText("acc-none")).toContain(zh["dash.syncNone"]);
+  });
+  it("同步中圆点带 dotRunning 修饰类（动画本体由浏览器实测覆盖）", async () => {
+    renderAccounts([account("acc-syncing", "running")]);
+    const dot = await screen.findByTestId("sync-dot-aliyun-acc-syncing");
+    expect(dot.className).toContain("dotRunning");
+  });
+  it("跨厂商同名账号不产生重复 key", async () => {
+    const spy = vi.spyOn(console, "error");
+    renderAccounts([account("prod", "success"), account("prod", "failed", "tencent")]);
+    expect(await screen.findAllByText("prod")).toHaveLength(2);
+    const dupKey = spy.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("same key"));
+    expect(dupKey).toEqual([]);
   });
   it("接口失败展示重试入口", async () => {
     vi.mocked(get).mockRejectedValue(new Error("boom"));

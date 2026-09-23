@@ -105,25 +105,22 @@ export default function DashboardPage() {
                 </span>
               </div>
               {data.syncStatus.accounts.map((a) => (
-                <div className={styles.syncRow} key={a.accountName}>
+                <div
+                  className={styles.syncRow}
+                  key={`${a.vendor}/${a.accountName}`}
+                  data-testid={`sync-row-${a.vendor}-${a.accountName}`}
+                >
                   <span>
-                    <span
-                      className={styles.dot}
-                      style={{
-                        background:
-                          a.status === "failed"
-                            ? "#DC2626"
-                            : a.status === "running"
-                              ? "#D97706"
-                              : "#10B981",
-                      }}
-                    />
-                    {a.accountName}
-                    <span
-                      style={{ color: "var(--gray-400, #94a3b8)", marginLeft: 6, fontSize: 12 }}
-                    >
-                      {a.vendor}
+                    <span className={styles.syncState}>
+                      <span
+                        className={`${styles.dot} ${a.status === "running" ? styles.dotRunning : ""}`}
+                        data-testid={`sync-dot-${a.vendor}-${a.accountName}`}
+                        style={{ background: dotColor(a.status) }}
+                      />
+                      {statusLabel(a.status)}
                     </span>
+                    <span className={styles.name}>{a.accountName}</span>
+                    <span className={styles.vendor}>{a.vendor}</span>
                   </span>
                   <span className={styles.time}>
                     {formatDateTime(a.lastSyncTime, zh["dash.never"] ?? "")}
@@ -136,6 +133,21 @@ export default function DashboardPage() {
       ) : null}
     </div>
   );
+}
+
+/** 圆点色取 design.md 语义色 Token；未知与 null（无同步记录）一律中性灰，不得借用成功绿。 */
+function dotColor(status: string | null): string {
+  if (status === "success") return "var(--success-500)";
+  if (status === "running") return "var(--warning-500)";
+  if (status === "failed") return "var(--danger-500)";
+  return "var(--gray-400)";
+}
+
+function statusLabel(status: string | null): string {
+  if (status === "success") return zh["dash.syncOk"] ?? "";
+  if (status === "running") return zh["dash.syncRunning"] ?? "";
+  if (status === "failed") return zh["dash.syncFail"] ?? "";
+  return zh["dash.syncNone"] ?? "";
 }
 
 function Kpi({ label, value, sub }: { label: string; value: string | number; sub: ReactNode }) {

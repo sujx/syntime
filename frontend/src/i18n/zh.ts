@@ -67,9 +67,10 @@ export const zh: Record<string, string> = {
   "dash.high": "高危",
   "dash.warning": "警告",
   "dash.ratio": "占比",
-  "dash.syncOk": "正常",
-  "dash.syncFail": "失败",
+  "dash.syncOk": "同步成功",
+  "dash.syncFail": "同步失败",
   "dash.syncRunning": "同步中",
+  "dash.syncNone": "暂无同步记录",
 
   "gov.filterKeyword": "搜索项目标签",
   "gov.resourceType": "资源类型",
