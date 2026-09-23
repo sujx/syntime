@@ -2,7 +2,7 @@ import { CheckCircleFilled, LockOutlined, MobileOutlined, UserOutlined } from "@
 import { App as AntdApp, Button, Checkbox, Input } from "antd";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { BizError } from "@/api/client";
+import { BizError, UNAUTHORIZED } from "@/api/client";
 import { Seal, Wordmark } from "@/brand/brand";
 import { useAuth } from "@/hooks/useAuth";
 import { zh } from "@/i18n/zh";
@@ -29,7 +29,13 @@ export default function LoginPage() {
       const target = from && findItem(from) !== undefined ? from : DEFAULT_PATH;
       navigate(target, { replace: true });
     } catch (err) {
-      if (!(err instanceof BizError)) message.error(zh["login.fail"]);
+      // 40100（错误凭据）不在全局 TOAST_CODES，且 AuthContext 的错误 banner 会被
+      // fixed 全屏登录屏遮挡——必须在此自行提示，否则登录失败无任何反馈
+      if (err instanceof BizError) {
+        if (err.code === UNAUTHORIZED) message.error(zh["login.badCredentials"]);
+      } else {
+        message.error(zh["login.fail"]);
+      }
     } finally {
       setSubmitting(false);
     }

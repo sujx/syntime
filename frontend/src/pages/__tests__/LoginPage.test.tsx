@@ -88,6 +88,22 @@ it("40001 停留登录页并显示后端文案", async () => {
   expect(navigate).not.toHaveBeenCalled();
 });
 
+it("40100 停留登录页并提示账号或密码错误", async () => {
+  // 真实后端对错误凭据返回 HTTP 401 + code 40100；40100 不在全局 TOAST_CODES，
+  // 必须由登录页自行提示（原缺陷：AuthContext banner 被 fixed 全屏登录屏遮住）
+  mock
+    .onPost("/token/")
+    .reply(401, { code: 40100, message: "找不到指定凭据对应的有效用户", data: null });
+  renderLogin();
+  await userEvent.type(screen.getByLabelText("用户名"), "demo");
+  await userEvent.type(screen.getByLabelText("密码"), "wrong-pass");
+  await userEvent.click(screen.getByRole("button", { name: /登\s*录/ }));
+  await waitFor(() =>
+    expect(screen.getByText(zh["login.badCredentials"] ?? "")).toBeInTheDocument(),
+  );
+  expect(navigate).not.toHaveBeenCalled();
+});
+
 it("空字段不发请求", async () => {
   const spy = vi.fn();
   mock.onPost("/token/").reply(spy);
