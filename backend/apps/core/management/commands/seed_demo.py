@@ -1,7 +1,9 @@
 """开发演示种子数据（仅 dev 使用，幂等：先清后种）。
 
 清理标记：云账号 (aliyun/prod-main)、(aliyun/prod-edge) 及其关联账单/资产/事件/预算
-（预算键固定集 PROJECTS）。种完后调用 aggregate_daily 覆盖写近 35 天聚合。
+（预算键固定集 PROJECTS）与本命令自身写下的聚合审计行。种完后调用 ``aggregate_daily``
+覆盖写近 35 天聚合，并补一条 aggregate 成功审计——仪表盘「最近聚合完成时间」以审计
+为唯一来源，而真实写入方是聚合任务（``cost.tasks``），种子走服务函数不产生审计。
 """
 
 from __future__ import annotations
@@ -14,11 +16,13 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.assets.models import CloudAsset
+from apps.audit.models import AuditLog
 from apps.billing.models import CloudAccount, CloudBillDetail, ResourceTypeDict, SyncLog
 from apps.billing.partitions import ensure_monthly_partition
 from apps.cost.models import ProjectBudget, ProjectCostDaily
 from apps.cost.services import aggregate_daily
 from apps.events.models import CloudEvent, EventTypeDict
+from common.audit import record_audit
 
 VENDOR = "aliyun"
 ACCOUNTS: list[tuple[str, str]] = [("prod-main", "enabled"), ("prod-edge", "disabled")]
@@ -31,6 +35,7 @@ TYPES = [
 ]
 PROJECTS = ["项目A", "项目B"]
 DAYS = 35
+AUDIT_OPERATOR = "seed_demo"
 
 
 class Command(BaseCommand):
@@ -48,6 +53,12 @@ class Command(BaseCommand):
         self._seed_budgets(today)
         self._seed_events(accounts, today)
         inserted, updated = aggregate_daily(start, today)
+        record_audit(
+            AuditLog.Action.AGGREGATE,
+            operator=AUDIT_OPERATOR,
+            params={"command": "seed_demo", "start": start.isoformat(), "end": today.isoformat()},
+            result="success",
+        )
         self.stdout.write(
             self.style.SUCCESS(
                 f"seed_demo 完成：账单 {CloudBillDetail.objects.count()} 行，"
@@ -67,6 +78,8 @@ class Command(BaseCommand):
         ProjectCostDaily.objects.filter(cloud_account_id__in=ids).delete()
         SyncLog.objects.filter(cloud_account_id__in=ids).delete()
         ProjectBudget.objects.filter(project_tag__in=PROJECTS).delete()
+        # 只清本命令自己的标记行，不碰任务写入的真实审计
+        AuditLog.objects.filter(action=AuditLog.Action.AGGREGATE, operator=AUDIT_OPERATOR).delete()
         qs.delete()
 
     def _ensure_partitions(self, today: date, start: date) -> None:

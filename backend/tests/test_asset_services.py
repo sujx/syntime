@@ -1,7 +1,10 @@
 """§6 资产全量对齐单测（uk_asset / F045）：upsert 幂等、缺席软删、复活、时间戳语义。"""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
+import apps.assets.services as services
 from apps.assets.models import CloudAsset
 from apps.assets.services import align_assets
 from apps.billing.models import CloudAccount
@@ -56,14 +59,32 @@ def test_align_repeat_keeps_first_seen(account):
 
 
 @pytest.mark.django_db
-def test_align_status_change_refreshes_status_changed_at(account):
+def test_align_status_change_refreshes_status_changed_at(account, monkeypatch):
+    """status 变化刷新 status_changed_at、不变则保持（V1.14 闲置判定口径）。
+
+    用确定性时钟替换 ``services.timezone``：align_assets 每次调用只取一次 now()，
+    故三次对齐拿到严格递增的时间戳，消除「两次对齐落在同一微秒致 ``>`` 断言偶发
+    失败」的时钟分辨率竞争（auto_now 走真实 django.utils.timezone，不受影响）。
+    """
+    base = datetime(2026, 9, 21, tzinfo=UTC)
+    ticks = iter(base + timedelta(seconds=i) for i in range(3))
+
+    class _Clock:
+        @staticmethod
+        def now() -> datetime:
+            return next(ticks)
+
+    monkeypatch.setattr(services, "timezone", _Clock)
+
     align_assets(account, [_asset(account, "i-1", status="running")])
     first_change = CloudAsset.objects.get().status_changed_at
-    assert first_change is not None
+    assert first_change == base
+
     align_assets(account, [_asset(account, "i-1", status="stopped")])
     second_change = CloudAsset.objects.get().status_changed_at
-    assert second_change is not None
-    assert second_change > first_change  # V1.14 闲置判定口径
+    assert second_change == base + timedelta(seconds=1)
+    assert second_change > first_change
+
     # 状态不变时不刷新
     align_assets(account, [_asset(account, "i-1", status="stopped")])
     assert CloudAsset.objects.get().status_changed_at == second_change

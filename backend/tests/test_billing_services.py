@@ -99,6 +99,24 @@ def test_release_writes_final_state(account):
     assert row.end_time is not None
 
 
+@pytest.mark.django_db
+def test_release_success_writes_back_last_sync_time(account):
+    """成功收尾回写 CloudAccount.last_sync_time（仪表盘同步时间的唯一来源）。"""
+    row = claim_sync_window(account, SyncLog.SyncType.AUTO, D1, D2)
+    release_sync_window(row, SyncLog.Status.SUCCESS)
+    account.refresh_from_db()
+    assert account.last_sync_time == row.end_time
+
+
+@pytest.mark.django_db
+def test_release_failed_leaves_last_sync_time_untouched(account):
+    """失败不推进「最近成功同步」时间，避免把失败的 end_time 当成成功时间。"""
+    row = claim_sync_window(account, SyncLog.SyncType.AUTO, D1, D2)
+    release_sync_window(row, SyncLog.Status.FAILED, error_msg="throttled")
+    account.refresh_from_db()
+    assert account.last_sync_time is None
+
+
 # ---------- 折算与标签归属（build_bill_row） ----------
 
 

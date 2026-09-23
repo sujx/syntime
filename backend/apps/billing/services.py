@@ -16,19 +16,15 @@ import logging
 from collections.abc import Iterable, Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import TYPE_CHECKING
 
 from django.db import transaction
 from django.utils import timezone
 
-from apps.billing.models import CloudBillDetail, SyncLog
+from apps.billing.models import CloudAccount, CloudBillDetail, SyncLog
 from apps.cost.services import resolve_tag_ownership
 from common.exceptions import SyncWindowConflictError
 from common.readers import MissingDictEntryError, get_exchange_rate
 from providers.base import BillLine
-
-if TYPE_CHECKING:  # 仅类型标注，避免运行期循环导入
-    from apps.billing.models import CloudAccount
 
 logger = logging.getLogger(__name__)
 
@@ -114,13 +110,19 @@ def release_sync_window(
     update_count: int = 0,
     error_msg: str | None = None,
 ) -> None:
-    """同步收尾：写终态与计数（成功/失败），由同步任务在 finally 语义处调用。"""
+    """同步收尾：写终态与计数（成功/失败），由同步任务在 finally 语义处调用。
+
+    成功时回写 ``CloudAccount.last_sync_time``（模型口径「最近成功同步」）——仪表盘
+    同步状态卡的账号时间以此字段为唯一来源；失败不推进该时间。
+    """
     row.status = status
     row.insert_count = insert_count
     row.update_count = update_count
     row.error_msg = error_msg
     row.end_time = timezone.now()
     row.save(update_fields=["status", "insert_count", "update_count", "error_msg", "end_time"])
+    if status == SyncLog.Status.SUCCESS:
+        CloudAccount.objects.filter(pk=row.cloud_account_id).update(last_sync_time=row.end_time)
 
 
 # ---------- 折算与标签归属（导入前置） ----------

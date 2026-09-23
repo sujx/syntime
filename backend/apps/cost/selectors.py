@@ -306,15 +306,36 @@ class TrendResult:
     bill_month_incomplete: bool
 
 
-def _daily_series(filters: CostQueryFilters, start: date, end: date) -> list[TrendPoint]:
-    """按 stat_date + 归并行键聚合金额，补齐区间内每个日历日（缺日 items 为空）。"""
+def _daily_series(
+    filters: CostQueryFilters, start: date, end: date, *, group_by: str = "project_tag"
+) -> list[TrendPoint]:
+    """按 stat_date + 分组维度聚合金额，补齐区间内每个日历日（缺日 items 为空）。
+
+    ``group_by="project_tag"``（接口8）：按归并行键（unassigned/conflict → 未分配成本）；
+    ``group_by="resource_type"``（接口9 仪表盘）：按资源类型堆叠，TrendItem.project_tag
+    承载资源类型码、tag_status 恒 None。
+    """
     qs = ProjectCostDaily.objects.filter(stat_date__gte=start, stat_date__lte=end)
     qs = _apply_filters(qs, filters)
-    agg = qs.values("stat_date", "project_tag", "tag_status").annotate(total=Sum("amount"))
+    by_resource = group_by == "resource_type"
+    group_fields = (
+        ("stat_date", "resource_type")
+        if by_resource
+        else (
+            "stat_date",
+            "project_tag",
+            "tag_status",
+        )
+    )
+    agg = qs.values(*group_fields).annotate(total=Sum("amount"))
 
     by_date: dict[date, dict[tuple[str, str | None], Decimal]] = {}
     for row in agg:
-        key = _row_key(row["project_tag"], row["tag_status"])
+        key = (
+            (row["resource_type"], None)
+            if by_resource
+            else _row_key(row["project_tag"], row["tag_status"])
+        )
         day = by_date.setdefault(row["stat_date"], {})
         day[key] = day.get(key, Decimal(0)) + (row["total"] or Decimal(0))
 
@@ -331,21 +352,30 @@ def _daily_series(filters: CostQueryFilters, start: date, end: date) -> list[Tre
     return points
 
 
-def query_cost_trend(filters: CostQueryFilters, *, today: date | None = None) -> TrendResult:
-    """接口8：本期 + 比较区间逐日序列。
-
-    比较区间为 PRD 2.2.1 等长前移区间；unassigned/conflict 归并为「未分配成本」。
-    ``bill_month_incomplete``：本期覆盖到「今天」所在自然月即标记含预估（PRD 2.1.2
-    「未出账账期通常为当月」）。``today`` 可注入以便测试，默认取系统当日。
-    """
+def _trend(filters: CostQueryFilters, today: date | None, group_by: str) -> TrendResult:
+    """本期 + 等长前移比较区间逐日序列（接口8/接口9 共用，仅分组维度不同）。"""
     today = today or date.today()
     compare_start, compare_end = previous_period(filters.start, filters.end)
     this_month = f"{today.year:04d}-{today.month:02d}"
     incomplete = this_month in covered_bill_months(filters.start, filters.end)
     return TrendResult(
-        current=_daily_series(filters, filters.start, filters.end),
-        compare=_daily_series(filters, compare_start, compare_end),
+        current=_daily_series(filters, filters.start, filters.end, group_by=group_by),
+        compare=_daily_series(filters, compare_start, compare_end, group_by=group_by),
         stat_range=(filters.start, filters.end),
         compare_range=(compare_start, compare_end),
         bill_month_incomplete=incomplete,
     )
+
+
+def query_cost_trend(filters: CostQueryFilters, *, today: date | None = None) -> TrendResult:
+    """接口8：本期 + 比较区间逐日序列（按项目标签归并，unassigned/conflict → 未分配成本）。
+
+    比较区间为 PRD 2.2.1 等长前移区间；``bill_month_incomplete``：本期覆盖到「今天」
+    所在自然月即标记含预估（PRD 2.1.2）。``today`` 可注入以便测试，默认取系统当日。
+    """
+    return _trend(filters, today, "project_tag")
+
+
+def query_resource_trend(filters: CostQueryFilters, *, today: date | None = None) -> TrendResult:
+    """接口9 仪表盘趋势：同接口8 结构与口径，但按 ``resource_type`` 堆叠（PRD 3.10-2）。"""
+    return _trend(filters, today, "resource_type")

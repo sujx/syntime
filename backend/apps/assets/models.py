@@ -42,6 +42,7 @@ class CloudAsset(models.Model):
     realname_status = models.CharField("实名状态", max_length=32, null=True, blank=True)
     dns_servers = models.CharField("DNS 服务器", max_length=256, null=True, blank=True)
     auto_renew = models.BooleanField("自动续费", null=True, blank=True)
+    remark = models.TextField("备注", null=True, blank=True)
     first_seen_at = models.DateTimeField("首次发现", null=True, blank=True)
     last_seen_at = models.DateTimeField("最近发现", null=True, blank=True)
     released_at = models.DateTimeField("释放时间", null=True, blank=True)

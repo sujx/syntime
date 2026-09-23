@@ -168,6 +168,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "events.self_calc_detect",
         "schedule": crontab(minute=0),
     },
+    # 分区维护：每月 1 日 01:00 预建当月+未来 2 个月账单分区、DETACH 超 24 个月旧分区、
+    # 清理超 audit_retention_months（默认 12）的审计日志（tasks.md 任务 6 / PRD 4.4-5）。
+    "partition-maintenance": {
+        "task": "billing.partition_maintenance",
+        "schedule": crontab(hour=1, minute=0, day_of_month=1),
+    },
 }
 
 # 任务互斥锁的 Redis 地址：缺省复用 broker（仅当 broker 是 Redis 时），否则本机 1 号库

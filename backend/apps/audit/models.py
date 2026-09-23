@@ -11,6 +11,8 @@ class AuditLog(models.Model):
         AGGREGATE = "aggregate", "聚合"
         BUDGET_IMPORT = "budget_import", "预算导入"
         DETECT = "detect", "自算检测"
+        MAINTAIN = "maintain", "分区维护"
+        EVENT_HANDLE = "event_handle", "事件处理"
 
     operator = models.CharField("操作人", max_length=150, null=True, blank=True)
     role = models.CharField("角色", max_length=32, null=True, blank=True)

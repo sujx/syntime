@@ -6,7 +6,9 @@ from io import StringIO
 from django.core.management import call_command
 from django.test import TestCase
 
+from apps.audit.models import AuditLog
 from apps.billing.models import CloudAccount, CloudBillDetail, SyncLog
+from apps.core.selectors import sync_status
 from apps.cost.models import ProjectCostDaily
 from apps.events.models import CloudEvent
 
@@ -21,6 +23,24 @@ class SeedDemoTests(TestCase):
         self.assertGreater(CloudBillDetail.objects.count(), 100)
         self.assertGreaterEqual(CloudEvent.objects.count(), 3)
         self.assertGreater(ProjectCostDaily.objects.count(), 0)
+
+    def test_seeds_dashboard_sync_sources(self):
+        """仪表盘同步块两处时间都要有来源：账号字段（种子直写）+ aggregate 成功审计（种子补种）。"""
+        self._run()
+        status = sync_status()
+        self.assertIsNotNone(status.last_aggregate_time)
+        accounts = {a.account_name: a for a in status.accounts}
+        self.assertIsNotNone(accounts["prod-main"].last_sync_time)
+        self.assertIsNotNone(accounts["prod-edge"].last_sync_time)
+
+    def test_aggregate_audit_not_accumulated(self):
+        """重复种只留一条种子聚合审计（先清后种覆盖自身标记行）。"""
+        self._run()
+        self._run()
+        self.assertEqual(
+            AuditLog.objects.filter(action=AuditLog.Action.AGGREGATE, operator="seed_demo").count(),
+            1,
+        )
 
     def test_idempotent(self):
         self._run()

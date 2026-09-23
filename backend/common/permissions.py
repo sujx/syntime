@@ -9,6 +9,8 @@
 from typing import Any
 
 from django.contrib.auth.models import AbstractUser, AnonymousUser
+from rest_framework.permissions import BasePermission
+from rest_framework.request import Request
 
 ROLE_COST_ADMIN = "成本管理员"
 ROLE_OPS = "云运维"
@@ -59,3 +61,29 @@ class RoleMaskedSerializerMixin:
         for field in masked & data.keys():
             data[field] = None
         return data
+
+
+class IsCostAdmin(BasePermission):
+    """接口级权限：仅成本管理员（api.md 接口14 域名导入限成本管理员）。
+
+    越权由 DRF ``PermissionDenied`` 经统一异常处理映射为 40300（HTTP 200）。
+    未登录仍由前置 ``IsAuthenticated`` 拦为 40100，故此处只判角色。
+    """
+
+    message = "仅成本管理员可执行该操作"
+
+    def has_permission(self, request: Request, view: object) -> bool:
+        return get_role(request.user) == ROLE_COST_ADMIN
+
+
+class IsEventOperator(BasePermission):
+    """接口级权限：事件状态流转限成本管理员与云运维（api.md 接口13）。
+
+    财务角色只读，越权→``PermissionDenied``→40300；无角色用户同样拒绝。
+    未登录仍由前置 ``IsAuthenticated`` 拦为 40100。
+    """
+
+    message = "仅成本管理员与云运维可执行该操作"
+
+    def has_permission(self, request: Request, view: object) -> bool:
+        return get_role(request.user) in (ROLE_COST_ADMIN, ROLE_OPS)

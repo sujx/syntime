@@ -178,6 +178,7 @@ CREATE TABLE cloud_asset (
     realname_status   VARCHAR(32),
     dns_servers       VARCHAR(256),
     auto_renew        BOOLEAN,
+    remark            TEXT,
     first_seen_at     TIMESTAMPTZ,
     last_seen_at      TIMESTAMPTZ,
     released_at       TIMESTAMPTZ,

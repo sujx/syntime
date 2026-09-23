@@ -12,6 +12,9 @@ urlpatterns = [
     path("api/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("api/auth/logout/", LogoutView.as_view(), name="auth_logout"),
     path("api/cost/", include("apps.cost.urls")),
+    path("api/assets/", include("apps.assets.urls")),
+    path("api/events/", include("apps.events.urls")),
+    path("api/dashboard/", include("apps.core.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema")),
 ]
