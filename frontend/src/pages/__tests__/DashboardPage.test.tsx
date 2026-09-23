@@ -20,6 +20,7 @@ vi.mock("@/hooks/useAuth", () => ({
 import { get } from "@/api/client";
 import DashboardPage from "@/pages/DashboardPage";
 import { zh } from "@/i18n/zh";
+import { localText } from "@/test/localTime";
 
 const data = {
   cards: {
@@ -50,11 +51,11 @@ const data = {
       {
         accountName: "prod-main",
         vendor: "aliyun",
-        lastSyncTime: "2026-09-21T02:30:00+08:00",
+        lastSyncTime: "2026-09-20T18:30:00Z",
         status: "success",
       },
     ],
-    lastAggregateTime: "2026-09-21T03:00:00+08:00",
+    lastAggregateTime: "2026-09-20T19:00:00Z",
   },
 };
 
@@ -74,6 +75,9 @@ describe("DashboardPage", () => {
     expect(screen.getByText("7")).toBeInTheDocument(); // 待处理事件=未读
     expect(screen.getByTestId(`chart:${zh["dash.trendTitle"]}`)).toBeInTheDocument();
     expect(screen.getByText("prod-main")).toBeInTheDocument();
+    // 同步块两处时间都按本地时区渲染；后端序列化的是 UTC，不可直接切片
+    expect(screen.getByText(localText("2026-09-20T19:00:00Z"))).toBeInTheDocument();
+    expect(screen.getByText(localText("2026-09-20T18:30:00Z"))).toBeInTheDocument();
   });
   it("接口失败展示重试入口", async () => {
     vi.mocked(get).mockRejectedValue(new Error("boom"));

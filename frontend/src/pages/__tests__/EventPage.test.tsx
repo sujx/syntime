@@ -21,6 +21,7 @@ import { get, post } from "@/api/client";
 import EventPage from "@/pages/EventPage";
 import { zh } from "@/i18n/zh";
 import styles from "@/pages/event/event.module.css";
+import { localText } from "@/test/localTime";
 
 const row = {
   id: 11,
@@ -38,8 +39,8 @@ const row = {
   instanceName: null,
   projectTag: null,
   cloudAccountName: "prod-main",
-  occurredAt: "2026-09-20T10:00:00+08:00",
-  receivedAt: "2026-09-20T10:01:00+08:00",
+  occurredAt: "2026-09-20T02:00:00Z",
+  receivedAt: "2026-09-20T02:01:00Z",
   status: "unread",
   handledBy: null,
   handledAt: null,
@@ -94,6 +95,11 @@ describe("EventPage", () => {
     expect(unreadRowClass).not.toBe("");
     expect(screen.getByText("账号欠费告警").closest("tr")).toHaveClass(unreadRowClass);
     expect(screen.getByText("域名到期提醒").closest("tr")).not.toHaveClass(unreadRowClass);
+    // 发生时间按本地时区渲染；后端序列化的是 UTC，不可直接切片
+    const unreadTr = screen.getByText("账号欠费告警").closest("tr");
+    expect(
+      within(unreadTr as HTMLElement).getByText(localText(row.occurredAt)),
+    ).toBeInTheDocument();
   });
   it("标记已读走接口13并提示成功", async () => {
     vi.mocked(get).mockResolvedValue(pageData);

@@ -46,7 +46,16 @@ export function DetailDrawer({ row, onClose }: { row: SummaryRow | null; onClose
       title={`${zh["gov.detailTitle"] ?? ""} · ${row?.projectTag ?? ""}`}
     >
       <Table<DetailRow>
-        rowKey={(r) => `${r.instanceId ?? "-"}|${r.resourceType}`}
+        rowKey={(r) =>
+          [
+            r.instanceId ?? "-",
+            r.resourceType,
+            r.cloudAccountName,
+            r.region ?? "-",
+            r.chargeType,
+            r.tagStatus,
+          ].join("|")
+        }
         size="small"
         loading={isFetching}
         columns={columns}

@@ -76,14 +76,14 @@ const details = {
   ],
 };
 
-async function openDrawer() {
+async function openDrawer(detailsPayload: typeof details = details) {
   vi.mocked(get).mockImplementation((url: string) =>
     url === "/cost/trend/"
       ? Promise.resolve(trend)
       : url === "/cost/summary/"
         ? Promise.resolve(summary)
         : url === "/cost/details/"
-          ? Promise.resolve(details)
+          ? Promise.resolve(detailsPayload)
           : Promise.resolve({}),
   );
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -134,6 +134,42 @@ describe("趋势卡 + 明细抽屉", () => {
       ),
     );
     expect(await within(dialog).findByText("i-abc")).toBeInTheDocument();
+  });
+  it("同一实例跨账号与地域时两行都在（6 列分组键，无重复 key）", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // 后端按 6 列去重，同一 instanceId|resourceType 出现在两个账号是正常数据
+    const twoAccounts = {
+      ...details,
+      total: 2,
+      list: [
+        {
+          instanceId: "i-abc",
+          resourceType: "ecs",
+          cloudAccountName: "prod",
+          region: "cn-shanghai",
+          amount: "150.00",
+          chargeType: "postpaid",
+          tagStatus: "normal",
+        },
+        {
+          instanceId: "i-abc",
+          resourceType: "ecs",
+          cloudAccountName: "backup",
+          region: "cn-beijing",
+          amount: "80.00",
+          chargeType: "postpaid",
+          tagStatus: "normal",
+        },
+      ],
+    };
+    await openDrawer(twoAccounts);
+    await userEvent.click(await screen.findByText("A"));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).getAllByText("i-abc")).toHaveLength(2));
+    const dupKeyWarnings = errSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((m) => m.includes("same key"));
+    expect(dupKeyWarnings).toEqual([]);
   });
   it("instanceId null 渲染 --（财务屏蔽口径）", async () => {
     await openDrawer();

@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEventList, useEventStatus, useEventTabCounts } from "@/features/events/hooks";
 import type { EventLevel, EventRow, EventStatus } from "@/api/types";
 import { zh } from "@/i18n/zh";
+import { formatDateTime } from "@/utils/datetime";
 import styles from "./event/event.module.css";
 
 type TabKey = "all" | EventStatus;
@@ -30,10 +31,6 @@ const STATUS_META: Record<EventStatus, { cls: string; text: string }> = {
   handled: { cls: styles.pillSuccess ?? "", text: zh["evt.statusHandled"] ?? "" },
   ignored: { cls: styles.pillGray ?? "", text: zh["evt.statusIgnored"] ?? "" },
 };
-
-function fmtTime(iso: string | null): string {
-  return iso ? iso.replace("T", " ").slice(0, 16) : "--";
-}
 
 export default function EventPage() {
   const { role } = useAuth();
@@ -99,7 +96,7 @@ export default function EventPage() {
     {
       title: zh["evt.colTime"],
       dataIndex: "occurredAt",
-      render: (_: string | null, row) => fmtTime(row.occurredAt ?? row.receivedAt),
+      render: (_: string | null, row) => formatDateTime(row.occurredAt ?? row.receivedAt),
     },
     {
       title: zh["evt.colStatus"],

@@ -6,10 +6,7 @@ import { buildResourceTrendOption } from "@/features/charts/trendOption";
 import { useAuth } from "@/hooks/useAuth";
 import { zh } from "@/i18n/zh";
 import styles from "./dashboard/dashboard.module.css";
-
-function fmtTime(iso: string | null): string {
-  return iso ? iso.replace("T", " ").slice(0, 16) : (zh["dash.never"] ?? "");
-}
+import { formatDateTime } from "@/utils/datetime";
 
 export default function DashboardPage() {
   const { username } = useAuth();
@@ -103,7 +100,9 @@ export default function DashboardPage() {
               </div>
               <div className={styles.syncRow}>
                 <span>{zh["dash.lastAggregate"]}</span>
-                <span className={styles.time}>{fmtTime(data.syncStatus.lastAggregateTime)}</span>
+                <span className={styles.time}>
+                  {formatDateTime(data.syncStatus.lastAggregateTime, zh["dash.never"] ?? "")}
+                </span>
               </div>
               {data.syncStatus.accounts.map((a) => (
                 <div className={styles.syncRow} key={a.accountName}>
@@ -126,7 +125,9 @@ export default function DashboardPage() {
                       {a.vendor}
                     </span>
                   </span>
-                  <span className={styles.time}>{fmtTime(a.lastSyncTime)}</span>
+                  <span className={styles.time}>
+                    {formatDateTime(a.lastSyncTime, zh["dash.never"] ?? "")}
+                  </span>
                 </div>
               ))}
             </section>
