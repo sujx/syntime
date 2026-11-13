@@ -210,12 +210,29 @@ def test_reimport_revives_released_domain():
 
 
 @pytest.mark.django_db
-def test_admin_save_derives_domain_status():
-    """Admin 保存域名时 status 由 expire_time 推导，与 CSV 导入共用同一口径。"""
+def test_admin_save_derives_domain_status(monkeypatch: pytest.MonkeyPatch):
+    """Admin 保存域名时 status 由 expire_time 推导，与 CSV 导入共用同一口径。
+
+    Admin 按线上语义不注入 ``today``，走的是真实时钟；而 ``_expire`` 的基准钉在
+    ``TODAY``，所以必须把 ``services`` 的时钟也换到 ``TODAY``，否则本用例随自然日期
+    腐化——真实日期一旦越过 fixture 的到期日（``TODAY + 10 天``），``days_until`` 变负，
+    就一路判成 ``expired``。带参调用仍委托真实换算，保住 ``days_until`` 的判别力。
+    """
     from django.contrib.admin.sites import AdminSite
     from django.test import RequestFactory
+    from django.utils import timezone as dj_timezone
 
+    from apps.assets import services
     from apps.assets.admin import CloudAssetAdmin
+
+    real_localdate = dj_timezone.localdate
+
+    class _Clock:
+        @staticmethod
+        def localdate(value: datetime | None = None) -> date:
+            return TODAY if value is None else real_localdate(value)
+
+    monkeypatch.setattr(services, "timezone", _Clock)
 
     admin = CloudAssetAdmin(CloudAsset, AdminSite())
     asset = CloudAsset(
