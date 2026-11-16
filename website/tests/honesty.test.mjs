@@ -191,3 +191,30 @@ test('S6-4 + CLS: Hero copy is on the page and img.shot carries the file\'s meas
   assert.equal(attr('width'), w, `${tool} 实测 ${tail} 宽 ${w}：width 属性写错就是给浏览器错的宽高比，反而制造 CLS`);
   assert.equal(attr('height'), h, `${tool} 实测 ${tail} 高 ${h}：height 属性必须等于固有高度`);
 });
+
+test('S6-1 foundation cards are all shipped and match the capability table', () => {
+  assert.equal(copy.foundation.items.length, 4);
+  for (const it of copy.foundation.items) assert.equal(it.badge, 'shipped');
+  const s = html('index.html');
+  const cardHtml = (s.match(/<section id="foundation"[\s\S]*?<\/section>/) || [''])[0];
+  assert.ok(cardHtml, 'public/index.html 里没有 <section id="foundation">');
+  assert.equal([...cardHtml.matchAll(/class="pill ok badge"/g)].length, 4);
+});
+
+test('pills row renders all 4 positioning pills', () => {
+  const s = html('index.html');
+  assert.equal(copy.pills.length, 4);
+  for (const p of copy.pills) assert.ok(strip(s).includes(p), `missing pill: ${p}`);
+  assert.doesNotMatch(s, /Docker 一键拉起/, 'V1.1 removed this pill (no image published)');
+});
+
+test('地基 2×2 在手机上塌成单列（.feat-grid-2 两条规则都在 APPENDIX）', () => {
+  const css = readCss();
+  const marker = css.indexOf('V1.1–V1.3 增补结构');
+  const head = css.slice(0, marker), tail = css.slice(marker);
+  assert.ok(!head.includes('.feat-grid-2'), '.feat-grid-2 是本站新 class，不得进转录区');
+  assert.match(tail, /\.feat-grid-2\{grid-template-columns:repeat\(2,1fr\)\}/);
+  const mq = (tail.match(/@media \(max-width:900px\)\{[\s\S]*?\}\s*\}/) || [''])[0];
+  assert.match(mq, /\.feat-grid-2\{grid-template-columns:1fr\}/,
+    '缺 ≤900 的单列覆写：附录里的 repeat(2,1fr) 会因源码顺序赢过转录区 .feat-grid{1fr}，手机上仍是两列');
+});

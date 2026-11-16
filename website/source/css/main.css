@@ -261,3 +261,11 @@ section{scroll-margin-top:96px}
    --success-500=#1FB56B 与原型 :401 的三个值逐字符相等（这条等值由 tokens.test.mjs 现比原型，
    不靠本注释自证），同一个颜色就此只有一个来源。 */
 .b-dot:nth-child(1){background:var(--danger-500)}.b-dot:nth-child(2){background:var(--warning-500)}.b-dot:nth-child(3){background:var(--success-500)}
+/* 地基段 2×2：原型无 `.feat-grid-2`（grep -c = 0），是本站新 class，故两条规则都只能在增补段——
+   转录区由 tokens.test.mjs 逐行比对把守，往 `@media (max-width:1279px)` 里塞一行就是破坏照抄契约。
+   只改列数，间距/字号仍归 .feat-grid / .feat-card。
+   断点取 900 不取 1279：桌面 2 列下 `≤1279` 无需覆写；但 `≤900` 的单列必须补——
+   本条 repeat(2,1fr) 源码顺序在转录块之后，会赢过转录区 :230 的 `.feat-grid{1fr}`，
+   不补则手机上四张地基卡永远是两列窄条（判据见 honesty.test.mjs 的 2×2 塌单列条）。 */
+.feat-grid-2{grid-template-columns:repeat(2,1fr)}
+@media (max-width:900px){.feat-grid-2{grid-template-columns:1fr}}
