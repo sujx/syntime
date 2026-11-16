@@ -27,7 +27,11 @@ meta:
 # TODO(发布前): syntime.cn 的 DNS 解析、实名认证与备案状态本轮未核实，落地前确认
 # ---------------------------------------------------------------------------
 placeholders:
+  # 发布前唯一需要改的两处地址；其余引用全部经 YAML 锚点共享，改这里即可全站对齐。
+  github_url: &gh_url "https://github.com/TODO_GITHUB_OWNER/SynTime"
+  dockerhub_url: &dh_url "https://hub.docker.com/r/TODO_DOCKERHUB_NAMESPACE"
   github_repo: "TODO_GITHUB_OWNER/SynTime"
+  dockerhub_namespace: "TODO_DOCKERHUB_NAMESPACE"
   dockerhub_image: "TODO_DOCKERHUB_NAMESPACE/syntime"
   docs_entry: "/docs/"
   changelog: "/updates/"
@@ -62,13 +66,13 @@ nav:
     - { text: "更新日志", href: "/updates/" }
   cta:
     text: "GitHub"
-    href: "https://github.com/TODO_GITHUB_OWNER/SynTime"
+    href: *gh_url
 
 hero:
   title: "把多云账单，汇算成一本明白账"
   subtitle: "SynTime（与时偕行）是一个免费开源的私有化多云成本管理平台：按项目标签归集云费用，预算、资产、事件、治理一站看清，部署在你自己的服务器上。"
   ctas:
-    - { text: "GitHub 获取源码", style: primary, href: "https://github.com/TODO_GITHUB_OWNER/SynTime" }
+    - { text: "GitHub 获取源码", style: primary, href: *gh_url }
     - { text: "自行部署快速开始", style: secondary, href: "#quickstart" }
   feats:
     - "多云账单统一归集"
@@ -162,7 +166,6 @@ quickstart:
       title: "准备依赖与环境"
       body: "PostgreSQL 15+（本项目在 17 上开发与实测）与 Redis 就绪；克隆仓库，用 uv 建 Python 3.12 虚拟环境并安装开发依赖。"
       code: |
-        git clone https://github.com/TODO_GITHUB_OWNER/SynTime.git
         cd SynTime/syntime/backend
         uv venv --python 3.12 && . .venv/bin/activate
         uv pip install -r requirements/dev.txt
@@ -229,8 +232,8 @@ faq:
 footer:
   brand: "SynTime · 与时偕行"
   links:
-    - { text: "GitHub", href: "https://github.com/TODO_GITHUB_OWNER/SynTime" }
-    - { text: "DockerHub", href: "https://hub.docker.com/r/TODO_DOCKERHUB_NAMESPACE" }
+    - { text: "GitHub", href: *gh_url }
+    - { text: "DockerHub", href: *dh_url }
     - { text: "更新日志", href: "/updates/" }
     - { text: "文档", href: "/docs/" }
   copyright: "© 2026 SynTime · 与时偕行 · 免费开源的个人作品，按“现状”提供"
