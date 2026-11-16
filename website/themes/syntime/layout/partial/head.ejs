@@ -1,0 +1,16 @@
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<% const C = site.data.copy; %>
+<% const isHome = !page.title || page.layout === 'index'; %>
+<title><%= isHome ? C.meta.title : page.title + ' · ' + config.title %></title>
+<meta name="description" content="<%= isHome ? C.meta.description : (page.excerpt || C.meta.description) %>">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect width='96' height='96' rx='22' fill='%23C0392B'/%3E%3Ctext x='48' y='66' font-size='56' font-weight='700' fill='%23fff' text-anchor='middle' font-family='KaiTi,STKaiti,serif'%3E%E5%81%95%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="<%- url_for('/css/main.css') %>">
+<meta property="og:type" content="<%= isHome ? 'website' : 'article' %>">
+<meta property="og:title" content="<%= isHome ? C.meta.title : page.title %>">
+<meta property="og:description" content="<%= C.meta.description %>">
+<meta property="og:image" content="<%= config.url %><%- url_for(C.meta.og_image) %>">
+<meta property="og:url" content="<%= config.url %><%- url_for(page.path) %>">
+<meta name="twitter:card" content="summary_large_image">
+</head>

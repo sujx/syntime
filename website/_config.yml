@@ -1,0 +1,32 @@
+title: SynTime · 与时偕行
+subtitle: 免费开源的私有化多云成本管理平台
+description: 按项目标签归集云费用，预算、资产、事件、治理一站看清，部署在你自己的服务器上。
+keywords:
+  - 云成本管理
+  - FinOps
+  - 阿里云
+  - 私有化部署
+  - 开源
+author: SynTime
+language: zh-CN
+timezone: Asia/Shanghai
+
+url: https://syntime.cn
+root: /
+permalink: :year/:month/:day/:title/
+theme: syntime
+
+# F5：三项必须同时关，否则代码块被包成带行号的 <table>，复制按钮会连行号一起复制
+highlight:
+  enable: false
+  line_number: false
+  wrap: false
+
+sitemap:
+  path: sitemap.xml
+
+index_generator:
+  path: ''
+  per_page: 1
+date_format: YYYY-MM-DD
+time_format: HH:mm:ss

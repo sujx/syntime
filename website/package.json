@@ -1,0 +1,21 @@
+{
+  "name": "syntime-website",
+  "private": true,
+  "version": "0.0.0",
+  "hexo": {
+    "version": "7.3.0"
+  },
+  "scripts": {
+    "build": "hexo clean && hexo generate",
+    "build:alt": "hexo clean && hexo generate --config=_config.yml,alt_root.yml",
+    "server": "hexo server",
+    "test": "npm run build && node --test tests/"
+  },
+  "dependencies": {
+    "hexo": "^7.3.0",
+    "hexo-renderer-ejs": "^2.0.0",
+    "hexo-renderer-marked": "^7.0.1",
+    "hexo-generator-sitemap": "^3.0.1",
+    "js-yaml": "^4.3.2"
+  }
+}
