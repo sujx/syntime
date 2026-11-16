@@ -109,3 +109,35 @@ test('every transcribed section has at least one live anchor selector', () => {
     assert.ok(css.includes(sel), `missing transcribed selector ${sel}`);
   }
 });
+
+test('增补段圆点色引用语义 Token，不在 CSS 里再抄一份十六进制', () => {
+  // 转录区 `.b-dot`（原型 :118）只有尺寸；颜色在原型里是 span 的内联 style（原型 :401），
+  // 而内联样式不进本站，所以颜色由 APPENDIX 补——但必须挂到 Token 层已有的三个语义色上，
+  // 否则同一个颜色就有了第二个来源（改 Token 时圆点不会跟着变，正是 Token 单一来源要避免的）。
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');            // 注释里也写着十六进制，先剥掉再判
+  const want = ['--danger-500', '--warning-500', '--success-500'];
+  for (let n = 1; n <= 3; n++) {
+    const m = bare.match(new RegExp(`\\.b-dot:nth-child\\(${n}\\)\\{background:([^}]*)\\}`));
+    assert.ok(m, `.b-dot:nth-child(${n}) 没有 background 规则——浏览器框的圆点会渲染成透明`);
+    assert.equal(m[1], `var(${want[n - 1]})`,
+      `.b-dot:nth-child(${n}) 的颜色必须是 var(${want[n - 1]})，不得写十六进制副本`);
+  }
+  const cut = css.indexOf(APPENDIX);
+  assert.ok(cut > 0, '找不到增补段标记');
+  assert.doesNotMatch(css.slice(cut).replace(/\/\*[\s\S]*?\*\//g, ''), /#(?:E85A5A|F5A623|1FB56B)/i,
+    '圆点的十六进制副本不得再出现在增补段——颜色只有一个来源（:root 的 Token）');
+});
+
+test('圆点用到的三个 Token 与原型 :401 的内联色逐字符相等', src, () => {
+  // 上条判据把圆点挂到 Token，本条钉住「挂对了」：Token 的值必须仍然等于原型那三枚内联色，
+  // 否则圆点会在 Token 层被悄悄换色。等式两边都现读，不靠注释自证。
+  const line = proto[400];                                          // 原型第 401 行
+  assert.ok(/class="b-dot"/.test(line), `原型 :401 不再是 .b-dot 那一行（${line}）——判据要跟着基准搬家`);
+  const hexes = [...line.matchAll(/background:#([0-9A-Fa-f]{6})/g)].map((m) => m[1].toUpperCase());
+  assert.deepEqual(hexes, ['E85A5A', 'F5A623', '1FB56B'], '原型 :401 的内联圆点色变了，需复核 Token 层');
+  for (const [tok, hex] of [['--danger-500', 'E85A5A'], ['--warning-500', 'F5A623'], ['--success-500', '1FB56B']]) {
+    const m = css.match(new RegExp(`${tok}:\\s*#([0-9A-Fa-f]{6})`));
+    assert.ok(m, `Token ${tok} 在 :root 里找不到`);
+    assert.equal(m[1].toUpperCase(), hex, `${tok} 已不等于原型圆点色 #${hex}`);
+  }
+});

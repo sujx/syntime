@@ -56,7 +56,6 @@ labels:
   copy_done: "已复制"
 
 nav:
-  brand: "SynTime · 与时偕行"
   anchors:
     - { text: "已上线地基", href: "#foundation" }
     - { text: "功能", href: "#features" }

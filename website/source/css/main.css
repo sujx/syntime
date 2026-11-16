@@ -251,11 +251,13 @@ section{scroll-margin-top:96px}
 .badge-note{margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--gray-100);
   font-size:12px;line-height:1.7;color:var(--gray-500)}
 .disclaimer{text-align:center;font-size:12px;color:var(--gray-500);margin-bottom:var(--space-4)}
-.shot-frame img{display:block;width:100%;height:auto}
-/* Hero 浏览器框内的截图不在 .shot-frame 里，需同一条弹性尺寸（原型 `.shot` 是作废的迷你 mock，不复用其声明） */
-.hero .shot{display:block;width:100%;height:auto}
-/* 浏览器框的三枚圆点：转录区 `.b-dot`（原型 :118，本文件 :98）只有尺寸、没有颜色——
-   原型把这三枚颜色写在 span 的 style 属性上（原型 :401），而本项目的 markup 一律不带内联样式
-   （计划 Step 5 输出的是裸 `<span class="b-dot">`）。原型没为它们立过类，属增补段的合法范围，
-   故色值在此单点定义，逐字取原型 :401，不再回到 markup。 */
-.b-dot:nth-child(1){background:#E85A5A}.b-dot:nth-child(2){background:#F5A623}.b-dot:nth-child(3){background:#1FB56B}
+/* 真截图兜底：与增补段已有的 .shot-frame img（T3 落在此区）同义，
+   合成为一条选择器列表，不留两份同值规则 */
+.shot-frame img,.hero .shot{display:block;width:100%;height:auto}
+/* 浏览器框三枚圆点：转录区 `.b-dot`（原型 :118，本文件 :98）只有尺寸、没有颜色——
+   原型把这三枚的颜色写在各 span 的 style 属性上（高保真原型_宣传站.html:401），
+   而内联样式不进本站：markup 出自主计划的裸 `<span class="b-dot">`。
+   颜色因此取 Token，不再抄一遍十六进制——实测 --danger-500=#E85A5A、--warning-500=#F5A623、
+   --success-500=#1FB56B 与原型 :401 的三个值逐字符相等（这条等值由 tokens.test.mjs 现比原型，
+   不靠本注释自证），同一个颜色就此只有一个来源。 */
+.b-dot:nth-child(1){background:var(--danger-500)}.b-dot:nth-child(2){background:var(--warning-500)}.b-dot:nth-child(3){background:var(--success-500)}
