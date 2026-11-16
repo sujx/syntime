@@ -83,4 +83,45 @@
     </div>
   </div>
 </section>
+
+<%# 段 6 界面速览：截图是真文件（source/images/gallery/*.webp，capture_shots.mjs 以 deviceScaleFactor 2
+    截取），路径 / 标题 / alt / disclaimer 全部来自 copy.gallery，模板不新增一句中文。
+    图注文字内联在 HTML 里，不抄原型 :829-834 的 CAPS 对象（那份写「厂商消息与平台自算双通道」，与 Q20 冲突，
+    且违反「无 copy.yml 之外的硬编码中文」）。
+    DIMS 是表现层的固有尺寸（防 CLS），键为 copy.yml 的图片路径：换图必须同步改这里，
+    否则判据按文件字节现量即红（honesty.test.mjs 的 T7 三条）。图片在此只出现一次（<img> 模板化），
+    按钮与面板两轮迭代都派生自 segments[]，data-shot 用序号——copy.gallery.segments 没有 id 键，
+    序号就是 T10 认的配对键。
+    io 不带 in：`.io.in{opacity:1}`（main.css:213）是 T10 运行时的解锁态，预置 in 等于取消淡入。
+    非当前按钮不写 class=""、非当前面板把 hidden 拼在属性串尾部：原型 :505-508 的 inactive 按钮
+    本来就没有 class 属性，产物也不留空属性与 `data-shot="0" >` 这种尾随空格。 %>
+<section id="gallery" class="sec">
+  <div class="wrap">
+    <div class="sec-head io">
+      <h2 class="h2"><%= C.gallery.heading %></h2>
+      <p class="lead"><%= C.gallery.subheading %></p>
+    </div>
+    <p class="disclaimer"><%= C.gallery.disclaimer %></p>
+    <div class="seg-row io">
+      <div class="seg" id="seg-shot" role="tablist" aria-label="<%= C.gallery.heading %>">
+        <% C.gallery.segments.forEach(function(g, i){ %>
+        <button type="button" role="tab" data-shot="<%= i %>" aria-selected="<%= i === 0 %>"<% if (i === 0) { %> class="on"<% } %>><%= g.title %></button>
+        <% }) %>
+      </div>
+    </div>
+    <% const DIMS = { '/images/gallery/settlement.webp': [2880, 2674],
+                      '/images/gallery/dashboard.webp': [2880, 2556],
+                      '/images/gallery/events.webp': [2880, 1800],
+                      '/images/gallery/governance.webp': [2880, 1800] }; %>
+    <% C.gallery.segments.forEach(function(g, i){ %>
+    <div class="shot-panel" data-shot="<%= i %>"<% if (i !== 0) { %> hidden<% } %>>
+      <div class="shot-frame io">
+        <img src="<%= url_for(g.image) %>" alt="<%= g.alt %>" loading="lazy"
+             width="<%= DIMS[g.image][0] %>" height="<%= DIMS[g.image][1] %>">
+      </div>
+      <p class="shot-cap io"><%= g.title %> · <%= C.gallery.disclaimer %></p>
+    </div>
+    <% }) %>
+  </div>
+</section>
 </main>

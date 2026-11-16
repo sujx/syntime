@@ -269,3 +269,11 @@ section{scroll-margin-top:96px}
    不补则手机上四张地基卡永远是两列窄条（判据见 honesty.test.mjs 的 2×2 塌单列条）。 */
 .feat-grid-2{grid-template-columns:repeat(2,1fr)}
 @media (max-width:900px){.feat-grid-2{grid-template-columns:1fr}}
+/* 段 6 真截图：四张长宽不一（汇算 2674 / 仪表盘 2556 高，事件与治理 1800），切 tab 时
+   页面高度会跟着跳，故封顶 70vh。overflow 从转录区的 hidden 改 auto 是**必须的**：
+   封顶后不滚就等于把整页截取的尾巴永久裁在框外，滚不到也看不见（disclaimer 已声明长页为整页截取）。
+   背景不改（裁定 6）：转录区 `.shot-frame{background:#fff}`（:140）是逐字节基准，
+   图铺满框内没有露底的地方，为它破「无实测理由不改视觉基准」的规矩不值。
+   `.shot-frame img{max-height:none}` 未加：全表没有任何规则给这张 img 设过 max-height，
+   实测 CDP getComputedStyle 已是 none（见 task-7-report.md 取证），写了是一条空转规则、第二个困惑来源。 */
+.shot-frame{max-height:70vh;overflow:auto}

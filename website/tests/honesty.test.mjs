@@ -402,3 +402,184 @@ test('地基 2×2 在手机上塌成单列（.feat-grid-2 两条规则都在 APP
   assert.ok(blocks.some((b) => /\.feat-grid-2\{grid-template-columns:1fr\}/.test(b)),
     '缺 ≤900 的单列覆写：附录里的 repeat(2,1fr) 会因源码顺序赢过转录区 .feat-grid{1fr}，手机上仍是两列');
 });
+
+// ---------------------------------------------------------------------------
+// T7 段 6：界面速览（真截图 + `.seg` 切换 + `disclaimer`）
+// ---------------------------------------------------------------------------
+
+// class 命中一律按 **token 集合**判，不看属性序也不看兄弟 class 的书写顺序（全局约束 13）。
+// 为什么不用 `[^"]*\bseg\b[^"]*`：`-` 本身就是非词字符，实测 node 里
+// /<div\b[^>]*\bclass="[^"]*\bseg\b[^"]*"/.test('<div class="seg-row">') === true，
+// 于是「.seg 控件」与「.seg-row 容器」在判据里失去区分——把两条不同的东西挂到同一个匹配上，
+// 正是约束 13 要避免的那类耦合（控制者裁定 4 给的写法在此偏宽，故收紧为 token 判等）。
+const classTags = (src, token, tag = 'div') =>
+  [...src.matchAll(new RegExp(`<${tag}\\b[^>]*\\bclass="([^"]*)"[^>]*>`, 'g'))]
+    .filter((m) => m[1].trim().split(/\s+/).includes(token));
+const cls = (m) => m[1].trim().split(/\s+/);
+const attr = (tag, name) => (tag.match(new RegExp(`\\b${name}="([^"]*)"`)) || [])[1];
+// 面板按**开标签下标**切，不用惰性 `[\s\S]*?<\/div>`：panel 里套了 .shot-frame 的 `</div>`，
+// 惰性版只切到 shot-frame 就断，图注整段落在切片外 → 逐面板判据空转（假通过的温床）。
+const panelBlocks = (g) => {
+  const at = classTags(g, 'shot-panel').map((m) => m.index);
+  return at.map((i, n) => g.slice(i, at[n + 1] ?? g.lastIndexOf('</section>')));
+};
+const openOf = (blk) => (blk.match(/^<div\b[^>]*>/) || [''])[0];
+
+test('S6-4 数据门：四段齐备、disclaimer 说出「非…实况」、被 includes 引用的文案不含 HTML 特殊字符', () => {
+  assert.equal(copy.gallery.segments.length, 4, '界面速览固定 4 段（设计方案 §2.1 段 6）');
+  for (const [i, seg] of copy.gallery.segments.entries()) {
+    for (const k of ['title', 'image', 'alt']) {
+      assert.ok(typeof seg[k] === 'string' && seg[k], `segments[${i}] 缺 ${k} 键`);
+    }
+    assert.match(seg.image, /^\/images\/gallery\/[\w-]+\.webp$/, `segments[${i}].image 不是站点内 webp 路径`);
+  }
+  // §6 诚实性 ④ 要的是**承认截图不是运行中的产品**这一半。brief 的 /非产品运行实况|非运行实况|设计稿/
+  // 三支择一，比 data.test.mjs:59 已有的 /设计稿/ 更宽，等于没新增防线（改写掉「非实况」它照样绿）；
+  // 这里钉住「非…实况 / 非…运行」这半句（设计方案 §2.1 段 6 的 V1.1 强制原文就含它），
+  // 同时容许「非产品实际运行画面」「非运行中的产品」这类同义改写——/tmp/t7-datagate-probe.mjs 有四例对照。
+  assert.match(copy.gallery.disclaimer, /非[^。]{0,14}(?:实况|运行)/,
+    'gallery.disclaimer 必须承认截图「非…实况/非…运行」：只留「设计稿」是设计方案 §2.1 段 6 不接受的写法');
+  // 下面的渲染门全部走 includes / indexOf 判**未解码的 HTML 字面量**（strip() 不解实体）。
+  // 实测 copy.gallery 今天不含 < > & " （本条即哨兵），所以两种写法同值；将来有人往 alt / disclaimer
+  // 里塞一个 & 或 <，`<%= %>` 会把它转义成 &amp;/&lt;，includes 静默失配 → 判据假绿，故当场红给它看。
+  const dirty = [];
+  const seen = [['disclaimer', copy.gallery.disclaimer], ['heading', copy.gallery.heading],
+    ['subheading', copy.gallery.subheading],
+    ...copy.gallery.segments.flatMap((sg, i) => [[`segments[${i}].alt`, sg.alt], [`segments[${i}].title`, sg.title]])];
+  for (const [k, v] of seen) if (/[<>&"']/.test(String(v))) dirty.push(`${k}: ${v}`);
+  assert.deepEqual(dirty, [],
+    '这些字符会被 <%= %> 转义，而 includes 型判据读的是转义前的原文 → 静默失配（假绿）；改文案前先解耦判据');
+});
+
+test('S6-4 渲染门：disclaimer 逐字渲染在分段控件之上（控件缺失必须红，不接受 -1 < n）', () => {
+  const g = sectionById(html('index.html'), 'gallery');
+  assert.ok(g, 'public/index.html 里没有 <section id="gallery">');
+  const d = classTags(g, 'disclaimer', 'p')[0];
+  const seg = classTags(g, 'seg')[0];
+  // 控制者裁定 4：brief 的 `indexOf('class="disclaimer"') < indexOf('class="seg"')` 在
+  // disclaimer **整行缺失**时得到 -1 < n，为真 → 假通过。先各自断言存在，再比大小。
+  assert.ok(d, '段 6 没有 <p class="disclaimer">');
+  assert.ok(seg, '段 6 没有 .seg 分段控件');
+  assert.ok(d.index > 0 && seg.index > 0, 'disclaimer 与 .seg 的下标都必须是真实存在的正值');
+  assert.ok(d.index < seg.index,
+    'disclaimer 必须在 .seg 之上（设计方案 §2.1 段 6「分段控件上方固定一行 disclaimer」）');
+  assert.ok(strip(g).includes(copy.gallery.disclaimer),
+    '页面上的 disclaimer 必须逐字等于 copy.gallery.disclaimer，模板不得另写一份');
+  assert.equal(classTags(g, 'seg-row').length, 1, '段 6 必须有且只有一个 .seg-row 容器（原型 :504 的居中版式）');
+});
+
+test('S6-4 渲染门：四张真截图的 src / alt / 固有尺寸逐张现量比对文件字节，作废 mock DOM 已绝迹', () => {
+  const s = html('index.html');
+  const g = sectionById(s, 'gallery');
+  assert.ok(g, 'public/index.html 里没有 <section id="gallery">');
+  for (const seg of copy.gallery.segments) {
+    // 只在**本段**里找这张图：dashboard.webp 同时被 Hero 用着（index.ejs:24），
+    // 整页 s.match 会先命中 Hero 那枚 `<img class="shot" … width="2880" height="2556">`，
+    // 于是"速览段的 dashboard 有没有写宽高"这条判据其实在替 Hero 背书——段 6 删掉宽高也照样绿。
+    const tag = (g.match(new RegExp(`<img\\b[^>]*\\bsrc="[^"]*${esc(seg.image)}"[^>]*>`)) || [''])[0];
+    assert.ok(tag, `段 6 没有 emit ${seg.image}`);
+    assert.ok(new RegExp(`alt="${esc(seg.alt)}"`).test(tag), `${seg.image}: alt 必须逐字等于 copy 的 alt`);
+    assert.match(tag, /loading="lazy"/, `${seg.image}: 段 6 在首屏之下必须懒加载（首屏 eager 那张归 Hero，另有判据）`);
+    const file = new URL(`../source${seg.image}`, import.meta.url);
+    assert.ok(existsSync(file), `copy 指向 ${seg.image}，但 source${seg.image} 不在，判据无从测量`);
+    // 固有尺寸**现量**（复用本文件 :150 的 intrinsicSize）：模板 DIMS 与文件字节谁改了都当场红，
+    // 判据里不再抄第二份尺寸表（控制者裁定 1）。
+    const { w, h, tool } = intrinsicSize(file);
+    const width = Number(attr(tag, 'width'));
+    const height = Number(attr(tag, 'height'));
+    assert.ok(width > 0 && height > 0, `${seg.image}: 产物没有 width/height 属性（${tool} 实测 ${w}×${h}）`);
+    assert.equal(width, w, `${tool} 实测 ${seg.image} 宽 ${w}，产物写 ${width}：错的宽高比本身就是 CLS`);
+    assert.equal(height, h, `${tool} 实测 ${seg.image} 高 ${h}，产物写 ${height}：模板 DIMS 已与文件字节脱钩`);
+  }
+  assert.doesNotMatch(s, /class="shot-side|class="mtbl|class="donut/, 'obsolete mockup DOM must be gone');
+});
+
+test('T7 DOM 契约：.seg button[data-shot] ↔ .shot-panel[data-shot]（Task 10 的 JS 全靠这条）', () => {
+  const g = sectionById(html('index.html'), 'gallery');
+  assert.ok(g, 'public/index.html 里没有 <section id="gallery">');
+  const segTag = classTags(g, 'seg')[0];
+  assert.ok(segTag, '段 6 没有 .seg 控件');
+  // 按钮只可能在 .seg 里：从它的开标签切到它自己的 `</div>`（.seg 内不再嵌套 div）
+  const segBlock = g.slice(segTag.index, g.indexOf('</div>', segTag.index));
+  const btns = [...segBlock.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map((m) => m[0]);
+  const panels = panelBlocks(g);
+  assert.equal(btns.length, copy.gallery.segments.length, '按钮数必须等于 segments.length');
+  assert.equal(panels.length, copy.gallery.segments.length, '面板数必须等于 segments.length');
+  const btnKeys = btns.map((t) => attr(t, 'data-shot'));
+  const panelKeys = panels.map((p) => attr(openOf(p), 'data-shot'));
+  assert.equal(new Set(btnKeys).size, btns.length, '按钮的 data-shot 有重复：一键点亮两块，T10 无从配对');
+  assert.deepEqual(panelKeys.sort(), btnKeys.sort(),
+    'button 与 panel 的 data-shot 键集必须相等——T10 按它配对，缺一边就是点了没反应');
+  const shown = panels.filter((p) => !/(^|\s)hidden(?=[\s>])/.test(openOf(p)));
+  assert.equal(shown.length, 1, `初始必须恰好一块面板可见，现在 ${shown.length} 块`);
+  assert.equal(attr(openOf(shown[0]), 'data-shot'), '0', '默认可见的必须是第 1 段（与 aria-selected 的 i===0 同源）');
+  for (const t of btns) assert.ok(['true', 'false'].includes(attr(t, 'aria-selected')), '每枚按钮都要有 aria-selected');
+  assert.equal(btns.filter((t) => attr(t, 'aria-selected') === 'true').length, 1, 'aria-selected="true" 必须恰好一枚');
+  for (const t of btns) assert.match(t, /role="tab"/, '切换按钮必须是 role="tab"（分段控件的 ARIA 形态）');
+  assert.match(segTag[0], /role="tablist"/, '.seg 容器必须是 role="tablist"');
+  // 控制者裁定 2：`.io.in{opacity:1}`（main.css:213）是 T10 的运行契约，模板预置 `in` 会让
+  // 速览的淡入永远不触发，还会把 T10 的入场 bug 掩成"看起来正常"。这里只许 io，一条都不许多。
+  const ioChk = (tag, wantIo) => {
+    const toks = cls(tag);
+    assert.equal(toks.includes('io'), wantIo, `${tag[1]}：入场锁 io 的有无与原型不一致`);
+    assert.ok(!toks.includes('in'), `${tag[1]}：模板不得预置 in——淡入由 T10 的 IntersectionObserver 加，不是写死`);
+  };
+  for (const f of classTags(g, 'shot-frame')) ioChk(f, true);
+  assert.equal(classTags(g, 'shot-frame').length, copy.gallery.segments.length, '每块面板各一个 .shot-frame');
+  ioChk(classTags(g, 'seg-row')[0], true);
+  for (const c of classTags(g, 'shot-cap', 'p')) ioChk(c, true);
+});
+
+test('S6-4 诚实装置：每张面板自己的图注都带 disclaimer，不只首屏', () => {
+  const g = sectionById(html('index.html'), 'gallery');
+  const panels = panelBlocks(g);
+  assert.equal(panels.length, copy.gallery.segments.length, '面板切不出来，逐面板判据无从落地');
+  panels.forEach((p, i) => {
+    const seg = copy.gallery.segments[i];
+    const cap = (p.match(/<p\b[^>]*\bclass="[^"]*\bshot-cap\b[^"]*"[^>]*>([\s\S]*?)<\/p>/) || [])[1];
+    assert.ok(cap, `第 ${i + 1} 面板没有自己的 .shot-cap`);
+    // 逐面板、面板内：只对整个 section 做 includes 时，「四张图注里只有一张说实话」照样绿。
+    assert.ok(cap.includes(seg.title), `第 ${i + 1} 面板的图注没有该段标题「${seg.title}」`);
+    assert.ok(cap.includes(copy.gallery.disclaimer),
+      `第 ${i + 1} 面板（${seg.title}）的图注没带 disclaimer：切到这一段就没人说实话了（§6 诚实性 ④ 是复数）`);
+  });
+});
+
+test('T7 模板门：段 6 由 C.gallery.segments 迭代出，DIMS 键集与 copy 的图片一一对应，url_for 走转义形态', () => {
+  // 与 T5/T6 的模板门同族：产物级判据抓不到「模板改回写死四段」——那种改法今天的产物照样全绿，
+  // 但第五段一进 copy.yml 就不会出现（渲染与数据就此脱钩）。
+  const idxSrc = readFileSync(new URL('../themes/syntime/layout/index.ejs', import.meta.url), 'utf8')
+    .replace(/<%#[\s\S]*?%>/g, '');
+  const sec = sectionById(idxSrc, 'gallery');
+  assert.ok(sec, 'themes/syntime/layout/index.ejs 里没有段 6 <section id="gallery">');
+  assert.equal([...sec.matchAll(/C\.gallery\.segments\.forEach/g)].length, 2,
+    '按钮一轮、面板一轮两次迭代；少一次就说明有东西不再派生自 segments[]');
+  assert.equal([...sec.matchAll(/<img\b/g)].length, 1, '段 6 只许一张模板化的 <img>：写死四张就不再派生自 segments[]');
+  // DIMS 的键集 == copy 的图片集。换图 / 加第五段而忘补 DIMS 时 `DIMS[g.image][0]` 在渲染期抛
+  // TypeError，而 `hexo generate` 的退出码仍是 0（task-6-report.md 取证纪律 1）——只有文本判据抓得住。
+  const keys = [...sec.matchAll(/'(\/images\/gallery\/[\w.-]+)'/g)].map((m) => m[1]);
+  assert.deepEqual(keys.sort(), copy.gallery.segments.map((x) => x.image).sort(),
+    '模板 DIMS 的键必须与 copy.gallery.segments[].image 一一对应（多余的键是死数据，缺的键构建即崩）');
+  assert.equal([...sec.matchAll(/\/images\/gallery\//g)].length, copy.gallery.segments.length,
+    '段 6 的图片路径只许出现在 DIMS 的键上，别处再抄一份就是第二个来源');
+  // 控制者裁定 7：`<%- url_for() %>` 是未转义输出，T11 要扫的就是这份清单；此处一律 `<%= %>`，
+  // 这些路径不含 HTML 特殊字符，产物逐字节相同（已核），只是不再往清单里添条目。
+  assert.doesNotMatch(sec, /<%-\s*url_for/, '段 6 的 url_for 必须走 <%= %> 转义形态');
+  assert.doesNotMatch(sec, /class="shot-frame io in"/, '模板不得再出现 io in 形态');
+});
+
+test('T7 CSS 门：.shot-frame 的封顶与可滚只有 APPENDIX 那一条覆写，白底仍归转录区', () => {
+  const css = readCss();
+  const marker = css.indexOf('V1.1–V1.3 增补结构');
+  assert.ok(marker > 0, '找不到增补段标记，覆写区与转录区失去边界');
+  const rules = (css.slice(marker).replace(/\/\*[\s\S]*?\*\//g, '').match(/\.shot-frame\{[^}]*\}/g)) || [];
+  assert.equal(rules.length, 1, '增补段里 .shot-frame 必须且只有一条覆写规则（0 条 = 封顶丢了，>1 条 = 同一属性两个来源）');
+  const decls = rules[0].slice(rules[0].indexOf('{') + 1, -1);
+  assert.match(decls, /max-height:\d+(?:\.\d+)?vh/,
+    '四张截图长宽不一（2674 / 2556 / 1800），不封顶则切 tab 时页面高度跟着跳');
+  assert.match(decls, /overflow:auto/,
+    '封顶后必须可滚：转录区 :140 是 overflow:hidden，整页截取的尾巴会永久裁在框外、滚也滚不到');
+  // 裁定 6：brief Step 4 的 background:var(--gray-25) 会覆掉逐字节基准的 #fff，属无因偏离，不加。
+  assert.doesNotMatch(decls, /background/, '底色只能有一条来源（转录区 :140 的 #fff）；要改底色请连基准一起改，别在附录里偷偷覆写');
+  assert.ok(css.slice(0, marker).includes('.shot-frame{background:#fff'), '转录区的 .shot-frame 白底必须原样在位');
+});
