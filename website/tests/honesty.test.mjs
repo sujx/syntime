@@ -653,3 +653,230 @@ test('T7 CSS 门：.shot-frame 的封顶与可滚只有 APPENDIX 那一条覆写
   assert.equal(synth.filter((r) => r.decls.includes('background')).length, 0,
     'CSS 注释被当成了规则（台账 R27(a) 同族）：本段注释里就写着 `.shot-frame{background:#fff}`');
 });
+
+// ---------------------------------------------------------------------------
+// T8 段 7：快速开始（暗极光 + 源码部署四步 + Docker `dev` 卡）
+// ---------------------------------------------------------------------------
+
+// 裁定 2（属性顺序无关，全局约束 13 同族）：brief 的 /<pre id="qs-code-2">([\s\S]*?)<\/pre>/
+// 与 /<section id="quickstart"/ 都是**字面量顺序**判据——本主题的 markup 写 `class` 在前时它们
+// 一处也匹配不到，判据会退化成 `match(...)[1]` 抛 TypeError（崩）或 ?? '' 空转（假通过）。
+const preById = (src, id) =>
+  (src.match(new RegExp(`<pre\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)<\\/pre>`)) || [])[1];
+const allPres = (src) => [...src.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/g)].map((m) => m[1]);
+// ejs 的 `<%= %>` 走 utils.escapeXML（& < > " ' 五个字符，实测 node_modules/ejs/lib/utils.js:71-82），
+// 所以产物里是 &lt;自行生成&gt;。逐行比对 copy 前先按同一张表反解——反序执行会把 &amp;lt; 二次解码成 <。
+const unesc = (x) => x.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&#34;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+// 只剥 span 的开闭标签、不剥别的：`strip()` 用空格替换标签，会把 `<span>a</span><span>b</span>`
+// 这种同一行两块也抹成"看着对"的形态，而本判据要钉的正是**一行一块**。
+const preLines = (raw) => unesc(raw.replace(/<\/?span\b[^>]*>/g, '')).split('\n');
+const spanPerLine = (raw, stepNo) => raw.split('\n').map((seg) => {
+  const m = seg.match(/^<span\b[^>]*\bclass="([^"]*)"[^>]*>([\s\S]*?)<\/span>$/);
+  assert.ok(m, `第 ${stepNo} 步的代码有一行不是**恰好一个** <span>…</span>（裁定 6 要的就是逐行一块）：${JSON.stringify(seg)}`);
+  return { cls: m[1].trim().split(/\s+/), text: unesc(m[2]) };
+});
+
+test('S6-3 数据门：四步序号连续、命令文本只活在 copy.yml 里、Docker 形态档位是 dev', () => {
+  assert.equal(copy.quickstart.steps.length, 4, '设计方案 §2.1 段 7 固定四步');
+  assert.deepEqual(copy.quickstart.steps.map((st) => st.no), [1, 2, 3, 4]);
+  assert.equal(copy.quickstart.planned.badge, 'dev', '镜像未发布，Docker 形态只能是 dev（§3.5 档位表）');
+  for (const st of copy.quickstart.steps) {
+    assert.ok(st.title && st.body && st.code, `第 ${st.no} 步缺 title/body/code`);
+    assert.doesNotMatch(st.code, /docker run|docker-compose|docker compose/,
+      `第 ${st.no} 步给了可执行的 docker 命令：V1.0 那条实测跑不通`);
+  }
+});
+
+test('S6-3 全页禁区：任何代码块里都没有可执行的 docker 命令，宣传语两处绝迹', () => {
+  const s = html('index.html');
+  const blocks = allPres(s);
+  // 先数块再判内容：段 7 没落地时 blocks 是空数组，for 循环空转 = 假通过（T6 评审同族的「-1 < n」）。
+  assert.ok(blocks.length >= copy.quickstart.steps.length,
+    `全页 <pre> 只有 ${blocks.length} 块，少于 steps.length=${copy.quickstart.steps.length}：禁令无从落地`);
+  blocks.forEach((pre, i) => assert.doesNotMatch(pre, /docker run|docker-compose|docker compose/,
+    `第 ${i + 1} 个代码块写了可执行命令：§6 诚实性 ③ 的当前禁区，且这条跑不通`));
+  // 裁定 9：整页禁令只到这两句宣传语——copy.yml:229 的 FAQ 散文「一条 `docker run` 拉起的形态仍在
+  // 开发中」是**说实话**而不是命令，扩大 ban 范围等于回头改内容层。
+  assert.doesNotMatch(s, /开箱即用|一键拉起/, '§6 禁止表述进了产物');
+});
+
+test('代码块里没有凭据形状的字串（连接串内嵌口令 / 键值对明文口令）', () => {
+  const blocks = allPres(html('index.html'));
+  assert.ok(blocks.length >= copy.quickstart.steps.length, '<pre> 块数少于 steps.length，本判据会空转');
+  for (const [i, pre] of blocks.entries()) {
+    assert.doesNotMatch(pre, /:[A-Za-z0-9_+/=.\-]{6,}@/,
+      `第 ${i + 1} 块：连接串里嵌了口令（postgresql://user:***@host）`);
+    // 裁定 1：brief 原式 /PASSWORD|secret[_-]?key\s*=\s*[A-Za-z0-9]/i 的 alternation 在顶层，
+    // 裸 `PASSWORD`（无等号）也判红，而 step 2 合法写着 SYNTIME_DB_PASSWORD=<你的口令>——自判自毙。
+    // 等号提到分组外之后：真值 PASSWORD=abc123 仍红，转义后的占位符 PASSWORD=&lt;…&gt; 绿。
+    assert.doesNotMatch(pre,
+      /(?:PASSWORD|SECRET[_-]?KEY|API[_-]?KEY|ACCESS[_-]?KEY)\s*=\s*[A-Za-z0-9]/i,
+      `第 ${i + 1} 块：凭据键等号后跟的是真值而非占位符`);
+  }
+});
+
+test('secrets stay angle-bracket placeholders (HTML-escaped by EJS)', () => {
+  const step2 = preById(html('index.html'), 'qs-code-2');
+  assert.ok(step2, '产物里没有 <pre …id="qs-code-2">：step 2 的占位符判据无从落地');
+  // 这里断言的是**转义后**的形态：模板走 `<%= %>`（裁定 6），改成 `<%- %>` 就变成裸 < >。
+  assert.match(step2, /&lt;你的口令&gt;/, 'DB 口令位必须是转义后的 <你的口令>，不是值');
+  assert.match(step2, /&lt;自行生成&gt;/, 'SECRET_KEY 位必须是转义后的 <自行生成>');
+});
+
+test('S6-3 段 7 结构：暗极光段 + .qs-grid 里四步 + dev 徽章的 Docker 卡 + 环境要求行', () => {
+  const q = sectionById(html('index.html'), 'quickstart');
+  assert.ok(q, 'public/index.html 里没有 <section id="quickstart">');
+  const sec = classTags(q, 'dark-sec', 'section')[0];
+  assert.ok(sec, '段 7 必须在 .dark-sec 上（设计方案 §2.1 段 7 = 暗极光）');
+  assert.ok(cls(sec).includes('sec'), '段 7 的开标签丢了 .sec（72px 上下留白）');
+  // 裁定 3：.qs-grid 是版式承重墙——.qs-grid{repeat(3,1fr)}（main.css:153）、.qs-full{grid-column:1/-1}
+  // （:170）、≤900px 塌单列（:229）全挂在它身上；漏了容器则四步全宽竖排，而 tokens.test.mjs:109
+  // 只断 CSS 里有 .qs-grid 这条规则，救不回 DOM。
+  assert.equal(classTags(q, 'qs-grid').length, 1, '段 7 的卡必须包在唯一的 .qs-grid 里');
+  assert.equal(classTags(q, 'step-n').length, copy.quickstart.steps.length, '序号圆点数必须等于四步');
+  assert.equal(classTags(q, 'qs-card').length, copy.quickstart.steps.length + 1,
+    '.qs-card 必须是四步 + Docker 卡共 5 张');
+  for (const st of copy.quickstart.steps)
+    assert.match(q, new RegExp(`<pre\\b[^>]*\\bid="qs-code-${st.no}"`), `第 ${st.no} 步没有自己的代码块`);
+  // 裁定 7：不再新增 `class="pill info badge"` 这种 token 串字面量（台账约束 13，T13 统一扫）。
+  // 按**文案**定位那枚徽章再判 token 集合：档位映射改了，判据跟着数据走，不用改判据本身。
+  const tier = copy.quickstart.planned.badge;
+  const devTxt = copy.labels.badges[tier];
+  const spans = [...q.matchAll(/<span\b[^>]*\bclass="([^"]*)"[^>]*>([\s\S]*?)<\/span>/g)]
+    .filter((m) => m[2].trim() === devTxt);
+  assert.equal(spans.length, 1, `.quickstart 里应恰好一枚「${devTxt}」徽章，现在 ${spans.length} 枚`);
+  const toks = spans[0][1].trim().split(/\s+/);
+  for (const t of ['pill', pillState(tier), 'badge'])
+    assert.ok(toks.includes(t), `Docker 卡徽章的 class 丢了 ${t}（现 "${spans[0][1]}"）：浅底 pill 是深底上的最高对比档`);
+  assert.ok(strip(q).includes(copy.quickstart.planned.body),
+    'Docker 卡的实话（镜像尚未发布 + 仍需两个依赖服务）没渲染出来');
+  // 裁定 5：requirements 按原型 :726 的版式切成多个 span，**整行逐字出现**这种判据永远不可能绿。
+  const parts = copy.quickstart.requirements.split('·').map((x) => x.trim());
+  const envAt = classTags(q, 'qs-env')[0];
+  assert.ok(envAt, '段 7 没有 .qs-env 容器：环境要求行无从落地');
+  // .qs-env 内只有 <span>/<i>，没有嵌套 div，故惰性切到第一个 </div> 就是它自己
+  const env = q.slice(envAt.index, q.indexOf('</div>', envAt.index));
+  const items = [...env.matchAll(/<span\b[^>]*>([\s\S]*?)<\/span>/g)].map((m) => m[1]);
+  assert.equal(items.length, parts.length,
+    `.qs-env 的 span 数（${items.length}）必须等于按 · 切出的项数（${parts.length}）`);
+  items.forEach((h, i) => {
+    assert.match(h, /^<i><\/i>/, `环境要求第 ${i + 1} 项没有 .qs-env i 圆点（原型 :726 的版式）`);
+    assert.ok(unesc(h.replace(/<[^>]+>/g, '')).includes(parts[i]),
+      `环境要求第 ${i + 1} 项不是「${parts[i]}」：${h}`);
+  });
+  assert.doesNotMatch(env, /·/, '.qs-env 里残留 · —— 说明要么没切分，要么切了又整行再输一遍');
+  assert.match(env, /Python 3\.12/, '环境要求必须写实值（V1.0 那行写的是 Docker）');
+  // 入场锁：与 T7 同源——只许 io，`in` 由 T10 的 IntersectionObserver 加（main.css:213）
+  for (const t of [...classTags(q, 'qs-card'), ...classTags(q, 'qs-env'), ...classTags(q, 'sec-head')])
+    assert.ok(cls(t).includes('io') && !cls(t).includes('in'), `${t[1]}：段 7 的 io/in 与约定不一致`);
+});
+
+test('T8 逐行数据门：每步代码块与 copy.quickstart.steps[].code 逐行相等，step 1 的 clone 由占位符拼出', () => {
+  const s = html('index.html');
+  const want = (st) => (st.no === 1
+    ? [`git clone ${copy.placeholders.github_url}.git`]
+    : []).concat(st.code.trim().split('\n'));
+  for (const st of copy.quickstart.steps) {
+    const raw = preById(s, `qs-code-${st.no}`);
+    assert.ok(raw, `第 ${st.no} 步没有代码块`);
+    assert.deepEqual(preLines(raw), want(st),
+      `第 ${st.no} 步的代码块与 copy.quickstart.steps[0].code 不逐行相等（多行 / 少行 / 改写都算）`);
+    // 裁定 6 的空白纪律：`<pre>` 里可见空白全算内容——换行数必须恰好 lines.length-1，
+    // 行首不得有模板带进去的缩进。
+    assert.equal((raw.match(/\n/g) || []).length, want(st).length - 1,
+      `第 ${st.no} 步的换行数不是 lines-1：模板往 <pre> 里喂了多余空白`);
+    assert.doesNotMatch(raw, /\n[ \t]/, `第 ${st.no} 步的 <pre> 内容有行首缩进（pre 的空白全可见）`);
+  }
+  // clone 行的唯一来源是占位符（Task 2 的单一来源；copy.yml:168 的注释授权的正是这一处拼装）
+  const first = preLines(preById(s, 'qs-code-1'))[0];
+  assert.equal(first, `git clone ${copy.placeholders.github_url}.git`,
+    'step 1 首行不是由 placeholders.github_url 现拼的 clone 命令');
+  assert.equal((s.match(/git clone/g) || []).length, 1,
+    '全页只许 step 1 那一处 git clone：别处再抄一份就是占位符之外的第二个来源');
+});
+
+test('T8 两色代码：# 开头的注释行走 .cmt、命令行走 .cmd，一行一块（不整块套一个 cmd）', () => {
+  const s = html('index.html');
+  const seen = { cmt: 0, cmd: 0 };
+  for (const st of copy.quickstart.steps) {
+    for (const g of spanPerLine(preById(s, `qs-code-${st.no}`), st.no)) {
+      const wantCls = /^\s*#/.test(g.text) ? 'cmt' : 'cmd';
+      assert.deepEqual(g.cls, [wantCls],
+        `「${g.text.slice(0, 40)}」分到了 ${g.cls.join(' ')}，应为 ${wantCls}（main.css:168-169 的两色分工）`);
+      seen[wantCls]++;
+    }
+  }
+  // 整块套一个 <span class="cmd"> 的写法会把注释行也漆成命令蓝：两堆计数都能兜住它，
+  // 但真正判死它的是上面逐行的「恰好一个 span」+ 逐行类名两条。
+  assert.ok(seen.cmt > 0 && seen.cmd > 0,
+    `段 7 必须同时出现 .cmt(${seen.cmt}) 与 .cmd(${seen.cmd})，单色就等于没做深色段的两色分工`);
+});
+
+test('T8 DOM 契约：每块 pre 配一枚 .copy-btn[data-copy]，data-label-done 来自 copy.labels（Task 10 依赖）', () => {
+  const q = sectionById(html('index.html'), 'quickstart');
+  const btns = [...q.matchAll(/<button\b[^>]*\bclass="([^"]*)"[^>]*>([\s\S]*?)<\/button>/g)]
+    .filter((m) => m[1].trim().split(/\s+/).includes('copy-btn'));
+  assert.equal(btns.length, copy.quickstart.steps.length, '复制按钮数必须等于代码块数');
+  assert.deepEqual(btns.map((m) => (m[0].match(/data-copy="([^"]*)"/) || [])[1]),
+    copy.quickstart.steps.map((st) => `qs-code-${st.no}`),
+    'data-copy 必须逐块指向自己的 pre id，且按 DOM 序与 steps[] 同序——T10 只认这个配对键');
+  for (const m of btns) {
+    assert.equal(/data-label-done="([^"]*)"/.exec(m[0])[1], copy.labels.copy_done,
+      'data-label-done 必须是 labels.copy_done：T10 点击后就把按钮文字换成它');
+    assert.equal(/aria-label="([^"]*)"/.exec(m[0])[1], copy.quickstart.copy_hint,
+      'copy_hint 在原型语言里是无障碍说明，必须挂 aria-label 而不是可见文字');
+    assert.equal(unesc(m[2].trim()), copy.labels.copy_button, '按钮可见文案只能是 labels.copy_button');
+  }
+});
+
+test('T8 模板门：段 7 由 C.quickstart.steps 迭代出，index.ejs 里不写死任何命令文本', () => {
+  // 与 T5/T6/T7 的模板门同族：产物级判据抓不到「模板改回写死四步」——那种改法今天的产物照样全绿，
+  // 但第五步一进 copy.yml 就不会出现。先剥 `<%# %>`：本段注释里就原样写着 manage.py 之类的字样。
+  const idxSrc = readFileSync(new URL('../themes/syntime/layout/index.ejs', import.meta.url), 'utf8')
+    .replace(/<%#[\s\S]*?%>/g, '');
+  const sec = sectionById(idxSrc, 'quickstart');
+  assert.ok(sec, 'themes/syntime/layout/index.ejs 里没有段 7 <section id="quickstart">');
+  assert.equal([...sec.matchAll(/C\.quickstart\.steps\.forEach/g)].length, 1,
+    '四步必须由一次 C.quickstart.steps.forEach 迭代出；写死四次就不再派生自 steps[]');
+  assert.equal([...sec.matchAll(/\bid="qs-code-/g)].length, 1,
+    '<pre> 的 id 只许模板里出现一次（出现四次说明有块不再跟着 steps[] 走）');
+  for (const lit of ['manage.py', 'uv venv', 'celery -A', 'uv pip install'])
+    assert.ok(!sec.includes(lit), `模板里写死了「${lit}」：命令文本的唯一来源是 copy.quickstart.steps[].code`);
+  // 唯一允许的字面命令前缀 = clone 行，且必须与占位符拼在一起（copy.yml:168 的注释授权的正是这一处）
+  assert.equal([...sec.matchAll(/git clone/g)].length, 1, 'git clone 字面量在段 7 模板只许出现在拼装那一处');
+  assert.match(sec, /git clone[^<]*\$\{C\.placeholders\.github_url\}/,
+    'step 1 首行必须是 `git clone ${C.placeholders.github_url}.git`：URL 只有一个来源（Task 2）');
+  assert.doesNotMatch(sec, /<%-\s*st\.code|<%-\s*line\b/,
+    '代码行必须走 `<%= %>` 转义：`<%- %>` 会让 <自行生成> 变成裸标签，R-1/R-2 的判据随之失明');
+  assert.equal([...sec.matchAll(/C\.quickstart\.requirements\.split/g)].length, 1,
+    '环境要求行只许按 · 切一次；两处切分就是「切了又整行再输一遍」的那类双处理');
+});
+
+test('T8 CSS 门：h3 内联徽章的对齐只有一条来源，且空转声明 position:static 不 ship', () => {
+  // 裁定 8：CSS 只在有实测理由时加，加了就钉住它——对齐决定（vertical-align:middle）与
+  // 「不 ship 死声明」两件事都得有判据，否则下一次目视走查会把它改回基线、或把 static 又塞回来。
+  const css = readCss();
+  const marker = css.indexOf('V1.1–V1.3 增补结构');
+  assert.ok(marker > 0, '找不到增补段标记，转录区与追加区失去边界');
+  assert.ok(!css.slice(0, marker).includes('.qs-card h3 .pill'),
+    '.qs-card h3 .pill 是本站新结构（原型的 .qs-card 里没有徽章），只许出现在增补段');
+  const mine = appendixRules(css.slice(marker)).filter((r) => !r.media
+    && r.selectors.includes('.qs-card h3 .pill'));
+  assert.equal(mine.length, 1,
+    `.qs-card h3 .pill 的顶层规则必须恰好一条（现在 ${mine.length} 条）：对齐决定只能有一个来源；`
+    + '按视口改值请写进 @media——媒体查询里的覆写本门允许（T11 的领地）');
+  const decls = mine[0].decls.replace(/\s/g, '');
+  for (const d of ['margin-left:var(--space-2)', 'vertical-align:middle'])
+    assert.ok(decls.includes(d), `段 7 的徽章对齐丢了 ${d}（现 "${mine[0].decls.trim()}"）：`
+      + '实测 24px 的 inline-flex pill 挂在 16px h3 基线上会下沉 4px');
+  // 死声明：全站唯一给徽章绝对定位的规则是 `.feat-card>.pill.badge`（main.css:250），它在 .qs-card 里
+  // 命不中——实测注入 `position:static` 后 h3 与徽章的 rect 逐值不变（task-8-report.md 对照 C 组）。
+  // 只禁 static 这一种值：`.feat-card>.pill.badge` 自己的 position:absolute 是 T5 的活规则，不算空转。
+  const dead = appendixRules(css.slice(marker))
+    .filter((r) => /\.pill|\.badge/.test(r.selectors.join(','))
+      && r.decls.replace(/\s/g, '').includes('position:static'));
+  assert.equal(dead.length, 0,
+    '增补段给 pill/badge 写了 position:static——本页没有任何规则把它们定位过，这是空转声明：'
+    + dead.map((r) => r.selectors.join(',')).join(' | '));
+});

@@ -277,3 +277,18 @@ section{scroll-margin-top:96px}
    `.shot-frame img{max-height:none}` 未加：全表没有任何规则给这张 img 设过 max-height，
    实测 CDP getComputedStyle 已是 none（见 task-7-report.md 取证），写了是一条空转规则、第二个困惑来源。 */
 .shot-frame{max-height:70vh;overflow:auto}
+/* 段 7 Docker 卡的标题内联徽章（本站新结构：原型的 .qs-card 里没有徽章，见 task-8-report.md 的 R-8 取证）。
+   实测 1440px 视口 + CDP getBoundingClientRect：`.pill` 是 24px 高的 inline-flex（转录区 :102），
+   挂在 16px / line-height 24px 的 `.qs-card h3`（:158）基线上时，徽章中心比标题文字中心**低 4.00px**，
+   徽章底边正压在 h3 底边上，把 h3 的行盒从 24px 撑到 28px（同段另四张卡的 h3 是 24px）。
+   取 `.alpha .pill`（:247，同一件「文字 + 徽章」的事）那两条声明：vertical-align:middle 把下沉收到
+   2.66px、行盒回到 26.66px；margin-left:var(--space-2) 把「标题→徽章」的可视间距从 3.63px（只剩一个
+   折叠空格）抬到 11.63px。
+   brief 的 position:static **不加**：全站唯一给徽章绝对定位的规则是 `.feat-card>.pill.badge`（:250），
+   它在 `.qs-card` 里命不中——实测该徽章的 computed position 本来就是 static，单独注入
+   `.dark-sec .badge{position:static}` 后 h3 与徽章的 rect 逐值不变（对照 C 组）。按本文件
+   `.shot-frame img{max-height:none}` 的先例，空转规则不 ship。
+   深色段的徽章配色不改（brief Step 4 的「无需另立徽章态」成立）：实测 computed
+   background=rgb(239,244,254) / color=rgb(59,99,216)，即 --primary-50 浅底 + --primary-600 暗字，
+   落在 #1A2B4F（:160）的极光底上是对比最高的一档。 */
+.qs-card h3 .pill{margin-left:var(--space-2);vertical-align:middle}

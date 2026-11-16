@@ -125,4 +125,55 @@
     <% }) %>
   </div>
 </section>
+
+<%# 段 7 快速开始：整段**重写**原型 :691-731。那份是 V1.0 的单条 docker run（实测跑不通：全仓无
+    Dockerfile、无镜像，且单容器起不来 Celery worker/beat 与 Redis），内嵌连接串口令形状，属设计方案
+    §6 诚实性 ③ 的当前禁区；本版改成 copy.quickstart.steps 的四步真实源码部署，Docker 形态降格为
+    一张带 dev 徽章的预告卡（badge 走 partial，档位仍从 copy 派生，模板不写 pill、不写档位）。
+    空白纪律：<pre> 在模板里顶格，块内内容只由「一行一个 span」拼出，行间用换行表达式隔开——
+    pre 里的空白全部可见，顺手把这一行缩进进 .code 就等于给每条命令加了前导空格。
+    分色按**整行**判（.cmt = 以 # 开头，其余 .cmd，main.css:167-169 与原型 :719-722 同构）：
+    命令行尾随的注释（第 3 步的 seed_demo 那行）因此仍是命令蓝，这是原型的既有限制，不做 token 级切分。
+    代码文本一律走转义输出标签，故 <自行生成> 在产物里是 &lt; 形态——honesty.test.mjs 的凭据判据与
+    占位符判据读的都是这份形态（改在未转义输出上，两条判据同时红）。
+    step 1 首行的 clone 由 placeholders.github_url 现拼（copy.yml:168 的注释授权的正是这一处），
+    其余每一行都来自 copy.quickstart.steps[].code：模板里不写任何命令文本。 %>
+<section class="sec dark-sec" id="quickstart">
+  <div class="wrap">
+    <div class="sec-head io">
+      <h2 class="h2"><%= C.quickstart.heading %></h2>
+      <p class="lead"><%= C.quickstart.subheading %></p>
+    </div>
+    <% const qsClone = `git clone ${C.placeholders.github_url}.git`;
+       const qsLines = (st) => (st.no === 1 ? [qsClone] : []).concat(st.code.trim().split('\n'));
+       const qsCls = (line) => (/^\s*#/.test(line) ? 'cmt' : 'cmd'); %>
+    <div class="qs-grid">
+      <% C.quickstart.steps.forEach(function(st){ %>
+      <div class="qs-card io">
+        <div class="step-n"><%= st.no %></div>
+        <h3><%= st.title %></h3>
+        <p><%= st.body %></p>
+        <div class="code">
+          <div class="code-bar">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="lang">bash</span>
+            <button class="copy-btn" type="button" data-copy="qs-code-<%= st.no %>"
+                    data-label-done="<%= C.labels.copy_done %>"
+                    aria-label="<%= C.quickstart.copy_hint %>"><%= C.labels.copy_button %></button>
+          </div>
+<pre id="qs-code-<%= st.no %>"><% qsLines(st).forEach(function(line, i){ %><%= i ? '\n' : '' %><span class="<%= qsCls(line) %>"><%= line %></span><% }); %></pre>
+        </div>
+      </div>
+      <% }) %>
+      <div class="qs-card qs-full io">
+        <h3><%= C.quickstart.planned.title %>
+          <%- partial('partial/badge', {badge: C.quickstart.planned.badge, extra: 'badge'}) %></h3>
+        <p><%= C.quickstart.planned.body %></p>
+      </div>
+    </div>
+    <div class="qs-env io">
+      <% C.quickstart.requirements.split('·').forEach(function(r){ %><span><i></i><%= r.trim() %></span><% }) %>
+    </div>
+  </div>
+</section>
 </main>
