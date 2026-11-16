@@ -14,6 +14,13 @@ test('hexo generate produced index.html with theme shell', () => {
   assert.match(s, /<link rel="icon" href="data:image\/svg\+xml/);
 });
 
+test('build emits every asset the pages reference', () => {
+  // 只查 index.html 的话，丢了 hexo-generator-sitemap（F3 同族）或 css/js 拷贝失败都会全绿
+  for (const a of ['css/main.css', 'js/main.js', 'sitemap.xml']) {
+    assert.ok(existsSync(pub(a)), `public/${a} missing`);
+  }
+});
+
 test('no unresolved EJS or undefined leakage', () => {
   const s = html('index.html');
   assert.doesNotMatch(s, /<%[=%-]/);
