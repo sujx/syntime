@@ -472,12 +472,21 @@ test('S6-4 渲染门：四张真截图的 src / alt / 固有尺寸逐张现量�
   const s = html('index.html');
   const g = sectionById(s, 'gallery');
   assert.ok(g, 'public/index.html 里没有 <section id="gallery">');
-  for (const seg of copy.gallery.segments) {
-    // 只在**本段**里找这张图：dashboard.webp 同时被 Hero 用着（index.ejs:24），
-    // 整页 s.match 会先命中 Hero 那枚 `<img class="shot" … width="2880" height="2556">`，
-    // 于是"速览段的 dashboard 有没有写宽高"这条判据其实在替 Hero 背书——段 6 删掉宽高也照样绿。
-    const tag = (g.match(new RegExp(`<img\\b[^>]*\\bsrc="[^"]*${esc(seg.image)}"[^>]*>`)) || [''])[0];
-    assert.ok(tag, `段 6 没有 emit ${seg.image}`);
+  // 图文配对按**面板下标 ↔ segments 下标**对齐（评审 Minor 1）：整段 g.match 只证明「段 6 某处有这张图」，
+  // 把两面板的 image+alt+尺寸整组对调时 alt / 尺寸 / 图注全都对得上、src 也全都能找到 → 49 条全绿，
+  // 而点「事件中心」出的却是「仪表盘」的图。段 6 是全站唯一可能图文不符的地方，§6 诚实性不容它静默通过。
+  // 同时搜索范围也不再放到整页：dashboard.webp 被 Hero 共用（index.ejs:24），整页 s.match 会先命中
+  // Hero 那枚 `<img class="shot" …>`，"速览段这张图写没写宽高"就成了替 Hero 背书（首轮 §5.1 / M11）。
+  const panels = panelBlocks(g);
+  assert.equal(panels.length, copy.gallery.segments.length, '面板数必须等于 segments.length，i↔i 配对无从对齐');
+  panels.forEach((p, i) => {
+    const seg = copy.gallery.segments[i];
+    // 面板序=数据序不是巧合：模板按 segments[] 迭代出 data-shot=i。这条钉住前提，否则 i↔i 配对
+    // 在面板被重排后会指错卡，而"配对"正是本轮要守的性质。
+    assert.equal(attr(openOf(p), 'data-shot'), String(i),
+      `第 ${i + 1} 个面板的 data-shot 不是 ${i}：面板序与 segments 序脱钩，图文配对判据指错卡`);
+    const tag = (p.match(new RegExp(`<img\\b[^>]*\\bsrc="[^"]*${esc(seg.image)}"[^>]*>`)) || [''])[0];
+    assert.ok(tag, `第 ${i + 1} 面板（${seg.title}）里没有 ${seg.image}——图与面板脱钩了，段 6 别处有这张图不算数`);
     assert.ok(new RegExp(`alt="${esc(seg.alt)}"`).test(tag), `${seg.image}: alt 必须逐字等于 copy 的 alt`);
     assert.match(tag, /loading="lazy"/, `${seg.image}: 段 6 在首屏之下必须懒加载（首屏 eager 那张归 Hero，另有判据）`);
     const file = new URL(`../source${seg.image}`, import.meta.url);
@@ -490,7 +499,7 @@ test('S6-4 渲染门：四张真截图的 src / alt / 固有尺寸逐张现量�
     assert.ok(width > 0 && height > 0, `${seg.image}: 产物没有 width/height 属性（${tool} 实测 ${w}×${h}）`);
     assert.equal(width, w, `${tool} 实测 ${seg.image} 宽 ${w}，产物写 ${width}：错的宽高比本身就是 CLS`);
     assert.equal(height, h, `${tool} 实测 ${seg.image} 高 ${h}，产物写 ${height}：模板 DIMS 已与文件字节脱钩`);
-  }
+  });
   assert.doesNotMatch(s, /class="shot-side|class="mtbl|class="donut/, 'obsolete mockup DOM must be gone');
 });
 
@@ -526,7 +535,11 @@ test('T7 DOM 契约：.seg button[data-shot] ↔ .shot-panel[data-shot]（Task 1
   };
   for (const f of classTags(g, 'shot-frame')) ioChk(f, true);
   assert.equal(classTags(g, 'shot-frame').length, copy.gallery.segments.length, '每块面板各一个 .shot-frame');
-  ioChk(classTags(g, 'seg-row')[0], true);
+  // 评审 Minor 2：`classTags(...)[0]` 可能是 undefined，直接喂 ioChk 就是 cls(undefined) 抛 TypeError——
+  // 崩不是红。隔壁那条「有且只有一个 .seg-row」在**另一个 test()** 里，node:test 用例相互隔离救不了这里。
+  const segRow = classTags(g, 'seg-row')[0];
+  assert.ok(segRow, '段 6 没有 .seg-row 容器（原型 :504 的居中版式）——io 判据无从落地');
+  ioChk(segRow, true);
   for (const c of classTags(g, 'shot-cap', 'p')) ioChk(c, true);
 });
 
@@ -568,18 +581,75 @@ test('T7 模板门：段 6 由 C.gallery.segments 迭代出，DIMS 键集与 cop
   assert.doesNotMatch(sec, /class="shot-frame io in"/, '模板不得再出现 io in 形态');
 });
 
+// 评审 Important 1：门要判的是**属性级唯一来源**，不是 `.shot-frame{` 的出现次数。
+// 数条数两头都坏：T11 加一条合法的 `@media (max-width:900px){.shot-frame{max-height:60vh}}` 会被判红，
+// 而 `.shot-frame,.x{overflow:visible}` 这种合并选择器里的第二个 overflow 来源数不到（实测 49 条全绿）。
+// 分堆走花括号深度（同 media900Blocks 的思路），扫描前先剥注释：本段注释里就原样写着
+// `.shot-frame{background:#fff}`（main.css:275），不剥就是拿注释顶替真规则。
+// media900Blocks 自己的那一行修仍按台账 R27(a) 归 T11，本门不越界替它改。
+function appendixRules(src) {
+  const text = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = [];
+  const walk = (chunk, media) => {
+    for (let i = 0; i < chunk.length;) {
+      const open = chunk.indexOf('{', i);
+      if (open < 0) break;
+      let depth = 1, j = open + 1;
+      while (j < chunk.length && depth > 0) {
+        if (chunk[j] === '{') depth++;
+        else if (chunk[j] === '}') depth--;
+        j++;
+      }
+      assert.ok(depth === 0, 'APPENDIX 里有没配上的花括号，规则无从分堆');
+      const prelude = chunk.slice(i, open).trim();
+      const body = chunk.slice(open + 1, j - 1);
+      if (/^@(media|supports)\b/.test(prelude)) walk(body, true);
+      else if (prelude && !prelude.startsWith('@')) {
+        out.push({ selectors: prelude.split(',').map((x) => x.trim()), decls: body, media });
+      }
+      i = j;
+    }
+  };
+  walk(text, false);
+  return out;
+}
+// 命中条件 = 逗号分开的选择器里有一处**正好是** `.shot-frame`：`.shot-frame,.x` 命中，
+// `.shot-frame img`（管的是图不是框）与 `.shot-frame:hover`（态）不算顶层第二个来源。
+const onFrame = (r) => r.selectors.includes('.shot-frame');
+const declares = (r, prop) => new RegExp(`(?:^|[;])\\s*${prop}\\s*:`, 'm').test(r.decls);
+
 test('T7 CSS 门：.shot-frame 的封顶与可滚只有 APPENDIX 那一条覆写，白底仍归转录区', () => {
   const css = readCss();
   const marker = css.indexOf('V1.1–V1.3 增补结构');
   assert.ok(marker > 0, '找不到增补段标记，覆写区与转录区失去边界');
-  const rules = (css.slice(marker).replace(/\/\*[\s\S]*?\*\//g, '').match(/\.shot-frame\{[^}]*\}/g)) || [];
-  assert.equal(rules.length, 1, '增补段里 .shot-frame 必须且只有一条覆写规则（0 条 = 封顶丢了，>1 条 = 同一属性两个来源）');
-  const decls = rules[0].slice(rules[0].indexOf('{') + 1, -1);
-  assert.match(decls, /max-height:\d+(?:\.\d+)?vh/,
-    '四张截图长宽不一（2674 / 2556 / 1800），不封顶则切 tab 时页面高度跟着跳');
-  assert.match(decls, /overflow:auto/,
-    '封顶后必须可滚：转录区 :140 是 overflow:hidden，整页截取的尾巴会永久裁在框外、滚也滚不到');
+  const frame = appendixRules(css.slice(marker)).filter(onFrame);
+  const top = frame.filter((r) => !r.media);
+  const sourcesOf = (prop) => top.filter((r) => declares(r, prop));
+  const names = (rs) => rs.map((r) => r.selectors.join(',')).join(' | ');
+  for (const [prop, re, why] of [
+    ['max-height', /max-height:\d+(?:\.\d+)?vh/, '四张截图长宽不一（2674 / 2556 / 1800），不封顶则切 tab 时页面高度跟着跳'],
+    ['overflow', /overflow:auto/, '封顶后必须可滚：转录区 :140 是 overflow:hidden，整页截取的尾巴会永久裁在框外、滚也滚不到'],
+  ]) {
+    const where = sourcesOf(prop);
+    assert.equal(where.length, 1,
+      `顶层 .shot-frame 的 ${prop} 必须只有一个来源，现在 ${where.length} 个${where.length ? `（${names(where)}）` : ''}`
+      + `。0 个 = 这条防线没了（${why}）；>1 个 = 桌面值有两个顶层来源。`
+      + '按视口改值请写进 @media——媒体查询里的 .shot-frame 覆写本门允许（T11 的领地）。');
+    assert.match(where[0].decls, re, why);
+  }
   // 裁定 6：brief Step 4 的 background:var(--gray-25) 会覆掉逐字节基准的 #fff，属无因偏离，不加。
-  assert.doesNotMatch(decls, /background/, '底色只能有一条来源（转录区 :140 的 #fff）；要改底色请连基准一起改，别在附录里偷偷覆写');
+  // 底色不分视口，所以顶层与 @media 两堆一起按零来源判（不像 max-height 那样给媒体覆写开豁免）。
+  assert.doesNotMatch(frame.map((r) => r.decls).join(';'), /background/,
+    '底色只能有一条来源（转录区 :140 的 #fff）；要改底色请连基准一起改，别在附录里偷偷覆写');
   assert.ok(css.slice(0, marker).includes('.shot-frame{background:#fff'), '转录区的 .shot-frame 白底必须原样在位');
+  // 分类器自检：「@media 覆写允许存在」不能只靠注释承诺（今天产物里还没有媒体覆写，
+  // 只靠变异实验证明就等于把它留给 T11 去撞）。合成对照钉住分堆与剥注释两件事。
+  const synth = appendixRules('/* .shot-frame{background:#eee} */ .shot-frame{max-height:70vh;overflow:auto}'
+    + '@media (max-width:900px){.shot-frame{max-height:60vh}}');
+  assert.equal(synth.filter((r) => onFrame(r) && !r.media && declares(r, 'max-height')).length, 1,
+    '分堆器把 @media 里的覆写算进了顶层来源——T11 加响应式断点就是假红');
+  assert.equal(synth.filter((r) => onFrame(r) && r.media).length, 1,
+    '分堆器没把 @media 里的 .shot-frame 认成媒体覆写：两堆混一起，唯一来源就无从判');
+  assert.equal(synth.filter((r) => r.decls.includes('background')).length, 0,
+    'CSS 注释被当成了规则（台账 R27(a) 同族）：本段注释里就写着 `.shot-frame{background:#fff}`');
 });

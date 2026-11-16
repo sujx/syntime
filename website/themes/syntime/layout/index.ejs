@@ -93,6 +93,7 @@
     按钮与面板两轮迭代都派生自 segments[]，data-shot 用序号——copy.gallery.segments 没有 id 键，
     序号就是 T10 认的配对键。
     io 不带 in：`.io.in{opacity:1}`（main.css:213）是 T10 运行时的解锁态，预置 in 等于取消淡入。
+    T10 必验：面板先解除 hidden 才谈得上 .shot-frame/.shot-cap 的 in（hidden 期间不参与布局、IO 不命中），须实测一次真实点击后无注入的可见性。
     非当前按钮不写 class=""、非当前面板把 hidden 拼在属性串尾部：原型 :505-508 的 inactive 按钮
     本来就没有 class 属性，产物也不留空属性与 `data-shot="0" >` 这种尾随空格。 %>
 <section id="gallery" class="sec">
