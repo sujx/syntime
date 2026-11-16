@@ -34,3 +34,23 @@ test('hero has a visible caption for the design-mock disclaimer (S6 4)', () => {
   assert.equal(typeof copy.hero.caption, 'string');
   assert.match(copy.hero.caption, /设计稿/);
 });
+
+test('every partial/dev card carries its badge_note (S6 2)', () => {
+  assert.equal(copy.foundation.items.length, 4, '地基段固定 4 卡');
+  assert.equal(copy.features.cards.length, 6, '功能段固定 6 卡');
+  for (const c of [...copy.foundation.items, ...copy.features.cards]) {
+    if (c.badge === 'partial' || c.badge === 'dev') {
+      assert.ok(typeof c.badge_note === 'string' && c.badge_note.trim().length > 0,
+        `badge_note missing on ${c.badge} card: ${c.title}`);
+    }
+  }
+});
+
+test('gallery screenshots are disclaimed as design mocks (S6 4)', () => {
+  assert.match(copy.gallery.disclaimer, /设计稿/);
+});
+
+test('the two non-card dev badges carry their own honest text (S0-6)', () => {
+  assert.match(copy.alpha_banner.text, /开发中|尚未/);
+  assert.match(copy.quickstart.planned.body, /尚未|未发布/);
+});
