@@ -2,7 +2,9 @@
 <html lang="<%= config.language %>">
 <%- partial('partial/head') %>
 <body>
+<%- partial('partial/nav') %>
 <%- body %>
+<%- partial('partial/footer') %>
 <script src="<%- url_for('/js/main.js') %>"></script>
 </body>
 </html>

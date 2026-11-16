@@ -1,6 +1,5 @@
 <% const C = site.data.copy; %>
-<%# 段 1（ALPHA 横幅 + 固定导航）在 partial/nav.ejs，首页在此装配；后续段按任务顺序追加在 Hero 之后 %>
-<%- partial('partial/nav') %>
+<%# 本文件只负责首页的内容段；全局 chrome（ALPHA 横幅 + 固定导航、页脚）由 layout.ejs 装配，后续段按任务顺序追加在 Hero 之后 %>
 <main>
 <section class="hero">
   <div class="wrap">

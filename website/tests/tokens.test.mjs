@@ -43,6 +43,13 @@ test('main.css 转录区逐行等于原型范围表（漏抄与自造都当场�
   const want = transcribedWanted();
   assert.ok(want.length > 200, `期望行数异常（${want.length}）——范围表或原型路径错了`);
   assert.deepEqual(got, want);
+  // 边界是双向的：转录区逐字之外，增补段也不许另立第二份同名规则来源。
+  // 注释里的 `.nav{top:12px}` 是 R16 的理由文字、不是规则，故两处都先剥注释再数。
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.equal((bare.match(/\.nav\{/g) || []).length, 1, '.nav{ 规则全站只能有一条（转录区的那条）');
+  const after = lines.slice(cut).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!after.includes('.nav{'), 'APPENDIX 段里不得再写 .nav{ 规则');
+  assert.doesNotMatch(css, /top:calc/, '全站不得出现 top:calc——.nav{top} 必须保持转录的 12px');
 });
 
 test(':root token block is a byte-faithful transcription of the baseline', src, () => {

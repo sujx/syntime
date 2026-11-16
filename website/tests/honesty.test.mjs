@@ -14,7 +14,10 @@ test('S6-5 ALPHA banner is in the first screen, above the nav content', () => {
   assert.ok(s.indexOf('class="alpha"') < s.indexOf('class="nav"'), 'banner must sit above nav');
   assert.ok(strip(s).includes(copy.alpha_banner.text));
   const st = copy.labels.badge_pill_state[copy.alpha_banner.badge];
-  assert.match(s, new RegExp(`class="pill ${st}"[^>]*>${copy.labels.badges[copy.alpha_banner.badge]}<`));
+  // Fix round 1 裁定：class 与徽章文字之间用 [\s\S]*?。实测 `[^>]*` 是否定字符类、本来就含 \n，
+  // 所以旧写法并未因换行静默失效（两种写法在当前产物上都为真）；此处取更宽容的形态以防别的回流，
+  // 徽章文字错位/丢失仍然判红（见报告的反证 mutant）。
+  assert.match(s, new RegExp(`class="pill ${st}"[\s\S]*?>${copy.labels.badges[copy.alpha_banner.badge]}<`));
 });
 
 test('S6-5 banner contains no seal-red', () => {
@@ -34,4 +37,13 @@ test('§6-5 first-screen clearance: banner pads past the fixed nav, nav top stay
   const css = readFileSync(new URL('../source/css/main.css', import.meta.url), 'utf8');
   assert.match((css.match(/\.alpha\{[^}]*\}/) || [''])[0], /padding:calc\(var\(--space-3\) \+ 70px\)/);
   assert.doesNotMatch(css, /^\.nav\{[^}]*top:calc/m, '.nav{top} must stay 12px as transcribed');
+});
+
+test('global chrome is assembled in layout, not per page', () => {
+  const lay = readFileSync(new URL('../themes/syntime/layout/layout.ejs', import.meta.url), 'utf8');
+  const idx = readFileSync(new URL('../themes/syntime/layout/index.ejs', import.meta.url), 'utf8');
+  assert.match(lay, /partial\('partial\/nav'\)/);
+  assert.match(lay, /partial\('partial\/footer'\)/);
+  assert.ok(lay.indexOf("partial('partial/nav')") < lay.indexOf('<%- body %>'), 'nav must precede body');
+  assert.doesNotMatch(idx, /partial\('partial\/nav'\)/, 'index must not re-render the nav');
 });
