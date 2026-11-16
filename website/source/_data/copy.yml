@@ -27,7 +27,8 @@ meta:
 # TODO(发布前): syntime.cn 的 DNS 解析、实名认证与备案状态本轮未核实，落地前确认
 # ---------------------------------------------------------------------------
 placeholders:
-  # 发布前唯一需要改的两处地址；其余引用全部经 YAML 锚点共享，改这里即可全站对齐。
+  # 发布前需要改的 3 处：github_url / dockerhub_url / dockerhub_image（YAML 无法在标量里插值别名），
+  # 其余引用全部经锚点共享；content.test.mjs 的 drift guard 会盯住这 3 处不一致。
   github_url: &gh_url "https://github.com/TODO_GITHUB_OWNER/SynTime"
   dockerhub_url: &dh_url "https://hub.docker.com/r/TODO_DOCKERHUB_NAMESPACE"
   github_repo: "TODO_GITHUB_OWNER/SynTime"
@@ -165,6 +166,7 @@ quickstart:
     - no: 1
       title: "准备依赖与环境"
       body: "PostgreSQL 15+（本项目在 17 上开发与实测）与 Redis 就绪；克隆仓库，用 uv 建 Python 3.12 虚拟环境并安装开发依赖。"
+      # clone 命令由模板从 placeholders.github_url 拼装（Task 8），此处只列克隆之后的步骤。
       code: |
         cd SynTime/syntime/backend
         uv venv --python 3.12 && . .venv/bin/activate

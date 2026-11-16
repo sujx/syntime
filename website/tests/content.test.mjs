@@ -24,6 +24,22 @@ test('all github hrefs alias the single placeholder', () => {
 test('placeholders stay internally consistent (drift guard)', () => {
   assert.equal(P.github_url, `https://github.com/${P.github_repo}`);
   assert.equal(P.dockerhub_url, `https://hub.docker.com/r/${P.dockerhub_namespace}`);
+  assert.equal(P.dockerhub_image, `${P.dockerhub_namespace}/syntime`);
+});
+
+test('no github/dockerhub string anywhere escapes the two placeholders', () => {
+  const host = /(github\.com|hub\.docker\.com|git@github)/i;
+  const bad = [];
+  (function walk(node, path) {
+    if (typeof node === 'string') {
+      if (host.test(node) && node !== P.github_url && node !== P.dockerhub_url) bad.push(`${path}: ${node}`);
+    } else if (Array.isArray(node)) {
+      node.forEach((v, i) => walk(v, `${path}[${i}]`));
+    } else if (node && typeof node === 'object') {
+      for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`);
+    }
+  })(copy, 'copy');
+  assert.deepEqual(bad, []);
 });
 
 test('quickstart step 1 carries no clone line (template owns it)', () => {
@@ -31,7 +47,11 @@ test('quickstart step 1 carries no clone line (template owns it)', () => {
   assert.match(copy.quickstart.steps[0].code, /^cd SynTime\/syntime\/backend/);
 });
 
-test('every TODO placeholder is still visibly a placeholder pre-publish', () => {
+test('every URL placeholder is still visibly a placeholder pre-publish', () => {
+  // 这是**发布前**门禁：真 owner / namespace 落地后本条会红，届时连同 :30 注释一起改。
   assert.match(P.github_repo, /^TODO_/);
   assert.match(P.dockerhub_namespace, /^TODO_/);
+  assert.match(P.github_url, /TODO_/);
+  assert.match(P.dockerhub_url, /TODO_/);
+  assert.match(P.dockerhub_image, /^TODO_/);
 });
