@@ -236,8 +236,14 @@ section{scroll-margin-top:96px}
 
 /* ============ V1.1–V1.3 增补结构（设计方案 §0-6 / §2.1） ============ */
 /* ALPHA 横幅：非固定，置于导航之上；印章红禁入（§0-4） */
+/* 顶部堆叠：横幅按 §2 段 1 保持非固定，但固定导航 pill 占住视口 12–70px
+   （.nav{top:12px} + .nav-inner{height:56px} + 上下 1px 边框），
+   排在文档流顶部的横幅会被它盖住 → 违反 §6 诚实性 ⑤「首屏可见」。
+   用 padding-top 让横幅文字落在 pill 之下；不改写转录区的 .nav{top}。
+   窄屏横幅换行只向下增高，不破坏这条留白（T11 复核 640px 观感）。 */
 .alpha{background:var(--primary-50);color:var(--primary-900);font-size:13px;line-height:1.6;
-  padding:var(--space-3) var(--space-6);text-align:center;border-bottom:1px solid var(--primary-100)}
+  padding:calc(var(--space-3) + 70px) var(--space-6) var(--space-3);
+  text-align:center;border-bottom:1px solid var(--primary-100)}
 .alpha .pill{margin-left:var(--space-2);vertical-align:middle}
 /* 卡右上角状态徽章：复用 §5.7 pill，不新立字号 */
 .feat-card{position:relative}
@@ -246,3 +252,5 @@ section{scroll-margin-top:96px}
   font-size:12px;line-height:1.7;color:var(--gray-500)}
 .disclaimer{text-align:center;font-size:12px;color:var(--gray-500);margin-bottom:var(--space-4)}
 .shot-frame img{display:block;width:100%;height:auto}
+/* Hero 浏览器框内的截图不在 .shot-frame 里，需同一条弹性尺寸（原型 `.shot` 是作废的迷你 mock，不复用其声明） */
+.hero .shot{display:block;width:100%;height:auto}

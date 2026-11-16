@@ -1,3 +1,32 @@
+<% const C = site.data.copy; %>
+<%# 段 1（ALPHA 横幅 + 固定导航）在 partial/nav.ejs，首页在此装配；后续段按任务顺序追加在 Hero 之后 %>
+<%- partial('partial/nav') %>
 <main>
-<section class="sec"><div class="wrap"><h1 class="h2"><%= site.data.copy.hero.title %></h1></div></section>
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-copy io in">
+      <h1 class="h1"><%= C.hero.title %></h1>
+      <p class="sub"><%= C.hero.subtitle %></p>
+      <div class="cta-row">
+        <% C.hero.ctas.forEach(function(b){ %>
+        <a class="btn btn-<%= b.style %> btn-xl" href="<%= b.href %>"><%= b.text %></a>
+        <% }) %>
+      </div>
+      <ul class="feats">
+        <% C.hero.feats.forEach(function(f){ %>
+        <li><span class="ck" aria-hidden="true">✓</span><%= f %></li>
+        <% }) %>
+      </ul>
+    </div>
+    <figure class="hero-visual">
+      <div class="browser">
+        <div class="b-top"><span class="b-dot"></span><span class="b-dot"></span><span class="b-dot"></span>
+          <span class="b-url">localhost:8000/dashboard</span></div>
+        <img class="shot" src="<%- url_for('/images/gallery/dashboard.webp') %>"
+             alt="<%= C.hero.screenshot_alt %>" loading="eager" width="2880" height="2556">
+      </div>
+      <figcaption class="shot-cap"><%= C.hero.caption %></figcaption>
+    </figure>
+  </div>
+</section>
 </main>

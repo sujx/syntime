@@ -1,0 +1,4 @@
+<% const L = site.data.copy.labels;
+   const cls = ['pill', L.badge_pill_state[locals.badge]];
+   if (locals.extra) cls.push(locals.extra); %>
+<span class="<%= cls.join(' ') %>"><%= L.badges[locals.badge] %></span>

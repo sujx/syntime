@@ -1,2 +1,24 @@
 <% const C = site.data.copy; %>
-<header class="nav"><div class="nav-inner wrap"><div class="brand"><%= C.nav.brand %></div></div></header>
+<div class="alpha" role="note">
+  <%= C.alpha_banner.text %><%- partial('partial/badge', {badge: C.alpha_banner.badge}) %>
+</div>
+<header class="nav">
+  <div class="nav-inner wrap">
+    <div class="brand">
+      <div class="seal">偕</div>
+      <div>
+        <div class="wm"><b class="syn">Syn</b><b class="t">Time</b></div>
+        <div class="wm-sub">与时偕行 · 多云成本管理</div>
+      </div>
+    </div>
+    <nav class="nav-links" aria-label="页面锚点">
+      <% C.nav.anchors.forEach(function(a){ %><a href="<%= a.href %>"><%= a.text %></a><% }) %>
+    </nav>
+    <div class="nav-cta">
+      <% C.nav.links.forEach(function(l){ %><a class="nav-log" href="<%- url_for(l.href) %>"><%= l.text %></a><% }) %>
+      <a class="btn btn-primary" href="<%= C.nav.cta.href %>" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        <%= C.nav.cta.text %></a>
+    </div>
+  </div>
+</header>
