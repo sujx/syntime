@@ -955,7 +955,7 @@ test('段8 结构：<section id="about"> 存在且含 .about-grid', () => {
   const s = html('index.html');
   const sec = sectionById(s, 'about');
   assert.ok(sec, 'public/index.html 里没有 <section id="about">');
-  assert.match(sec, /class="[^"]*about-grid[^"]*"/, '段 8 缺 .about-grid 容器');
+  assert.ok(classTags(sec, 'about-grid').length >= 1, '段 8 缺 .about-grid 容器');
 });
 
 test('段8 散文门：heading / statement / statement_note / stack[] / links[].text 全部渲染', () => {
