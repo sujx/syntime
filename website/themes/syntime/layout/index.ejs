@@ -41,8 +41,7 @@
 </section>
 
 <%# 段 4 已上线地基：版式完全复用 .feat-grid/.feat-card（设计方案 §2.1 段 4 明令不新立间距/字号），
-    与功能段的区分只靠 sec-head 文案；id 写在 class 前是因为 honesty.test.mjs 的 S6-1 判据按
-    `<section id="foundation"` 字面切片，class 名单与原型转录的 `sec sec-gray` 逐字未动。 %>
+    与功能段的区分只靠 sec-head 文案；class 名单与原型转录的 `sec sec-gray` 逐字未动。 %>
 <section id="foundation" class="sec sec-gray">
   <div class="wrap">
     <div class="sec-head io">
@@ -55,6 +54,30 @@
         <%- partial('partial/badge', {badge: it.badge, extra: 'badge'}) %>
         <h3><%= it.title %></h3>
         <p><%= it.body %></p>
+      </article>
+      <% }) %>
+    </div>
+  </div>
+</section>
+
+<%# 段 5 功能特性六卡：图标由 partial('partial/feat-icon') 按卡 id 取色底与图形（copy.yml 只装文案，
+    §3 规则；色底逐字节取自原型 :464-489），徽章与 badge_note 一律从 cards[] 派生，模板不手写 pill、
+    不写死档位。id 写在 class 前只为与本页其它段一致——判据一律走 sectionById，换序两种写法都认
+    （全局约束 13）。 %>
+<section id="features" class="sec sec-gray">
+  <div class="wrap">
+    <div class="sec-head io">
+      <h2 class="h2"><%= C.features.heading %></h2>
+      <p class="lead"><%= C.features.subheading %></p>
+    </div>
+    <div class="feat-grid">
+      <% C.features.cards.forEach(function(c){ %>
+      <article class="feat-card io">
+        <%- partial('partial/badge', {badge: c.badge, extra: 'badge'}) %>
+        <%- partial('partial/feat-icon', {id: c.id}) %>
+        <h3><%= c.title %></h3>
+        <p><%= c.body %></p>
+        <% if (c.badge_note) { %><p class="badge-note"><%= c.badge_note %></p><% } %>
       </article>
       <% }) %>
     </div>

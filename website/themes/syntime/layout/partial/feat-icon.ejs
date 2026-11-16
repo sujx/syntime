@@ -1,0 +1,15 @@
+<%# 顺序=copy.yml features.cards；tint 与 svg 内层标记逐字符照抄原型 :464-489，不改写、不重画 %>
+<%
+const MAP = {
+  settlement: ['ic-info', '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>'],
+  budget:     ['ic-ok',   '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'],
+  asset:      ['ic-info', '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>'],
+  events:     ['ic-warn', '<path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/>'],
+  governance: ['ic-bad',  '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>'],
+  export:     ['ic-info', '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/>']
+};
+const m = MAP[locals.id];
+%>
+<div class="f-ic <%= m[0] %>" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><%- m[1] %></svg>
+</div>

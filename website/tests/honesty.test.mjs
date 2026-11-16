@@ -289,6 +289,91 @@ function media900Blocks(src) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// T6 段 5：功能特性六卡（徽章 + badge_note 强制出口）
+// ---------------------------------------------------------------------------
+const EXPECTED_TIERS = { settlement: 'partial', budget: 'partial', asset: 'partial',
+  events: 'partial', governance: 'partial', export: 'dev' };
+
+test('S6-1 数据门：六卡档位逐字等于设计稿 §3.5 能力表，且 partial/dev 必带 note', () => {
+  assert.equal(copy.features.cards.length, 6);
+  assert.deepEqual(Object.fromEntries(copy.features.cards.map((c) => [c.id, c.badge])), EXPECTED_TIERS);
+  for (const c of copy.features.cards) {
+    if (c.badge !== 'partial' && c.badge !== 'dev') continue;
+    assert.ok(c.badge_note && c.badge_note.trim().length >= 20,
+      `${c.id}: ${c.badge} 卡缺 badge_note 或过短（§6 诚实性 ②：一个徽章糊过去等于没标）`);
+  }
+});
+
+test('S6-2 渲染门：徽章与 note 逐卡落位、态派生自数据、各态计数与档位表一致', () => {
+  const sec = sectionById(html('index.html'), 'features');
+  assert.ok(sec, 'public/index.html 里没有 <section id="features">');
+  const cards = [...sec.matchAll(/<article\b[^>]*\bclass="feat-card[^"]*"[\s\S]*?<\/article>/g)].map((m) => m[0]);
+  assert.equal(cards.length, copy.features.cards.length, '按 <article…>…</article> 切不出 6 张功能卡');
+  cards.forEach((card, i) => {
+    const c = copy.features.cards[i];
+    const st = pillState(c.badge);
+    // 徽章与 note 都必须在**这张卡自己的片段里**：整段 includes 会让「四枚徽章堆在第一张卡」
+    // 或「所有 note 挤到最后一张卡」照样绿（T5 修复轮的同一族缺陷，别再犯）。
+    assert.match(card, new RegExp(`class="pill ${esc(st)} badge"`),
+      `第 ${i + 1} 卡「${c.title}」的 ${st} 徽章没渲染在卡内`);
+    assert.match(card, new RegExp(`class="badge-note"[^>]*>\\s*${esc(c.badge_note.slice(0, 40))}`),
+      `第 ${i + 1} 卡「${c.title}」的 badge_note 没渲染在卡内`);
+  });
+  // 绝对计数门：只断言「每卡都有自己的态」时，把两卡档位**互换**在整段层面看不出来；
+  // 逐卡已能抓互换，这条再兜住「多画/少画徽章」，且红话直接指出是哪个态。
+  for (const [tier, st] of Object.entries(copy.labels.badge_pill_state)) {
+    const want = copy.features.cards.filter((c) => c.badge === tier).length;
+    assert.equal([...sec.matchAll(new RegExp(`class="pill ${esc(st)} badge"`, 'g'))].length, want,
+      `功能段 ${tier}→${st} 态徽章数应为 ${want}`);
+  }
+});
+
+test('S6-1 模板门：徽章与图标都由迭代变量出，index.ejs 不手写 pill', () => {
+  const idxSrc = readFileSync(new URL('../themes/syntime/layout/index.ejs', import.meta.url), 'utf8')
+    .replace(/<%#[\s\S]*?%>/g, '');
+  const sec = sectionById(idxSrc, 'features');
+  assert.ok(sec, 'themes/syntime/layout/index.ejs 里没有段 5 <section id="features">');
+  assert.match(sec, /partial\('partial\/badge',\s*\{badge:\s*c\.badge/,
+    "徽章必须走 partial('partial/badge', {badge: c.badge…})，实参是迭代变量");
+  assert.match(sec, /partial\('partial\/feat-icon',\s*\{id:\s*c\.id/,
+    "图标必须走 partial('partial/feat-icon', {id: c.id…})");
+  assert.equal([...sec.matchAll(/partial\('partial\/badge'/g)].length, 1,
+    '段 5 只该有循环里那一次徽章调用；多出来就说明有卡不再派生自 cards[]');
+  assert.doesNotMatch(sec, /<span\b[^>]*\bclass="pill/, '段 5 不得直接写 <span class="pill…">');
+});
+
+test('S6-3 no feature card body repeats a claim the note walks back', () => {
+  const banned = /开箱即用|自动同步已上线|三条链路/;
+  for (const c of copy.features.cards) {
+    assert.doesNotMatch(c.title, banned, `${c.id}: title 含 §6 禁止表述`);
+    assert.doesNotMatch(c.body, banned, `${c.id}: body 含 §6 禁止表述`);
+  }
+});
+
+// 与 tokens.test.mjs:9-12 同一个原型路径与同一个「原型不在就 skip」先例；本文件此前不读原型。
+const PROTO_URL = new URL('../../../高保真原型_宣传站.html', import.meta.url);
+const normWs = (x) => x.replace(/\s+/g, '');
+
+test('功能图标逐字节转录自原型 :464-489（色底与图形**成对**对得上，不重画、不串档）',
+  existsSync(PROTO_URL) ? {} : { skip: '原型 HTML 不在约定路径，转录判据无从比对' }, () => {
+    const proto = readFileSync(PROTO_URL, 'utf8');
+    // 原型侧把「色底 + 那一块的完整 <svg>」作为**一对**取出，而不是两件事各自全局查存在性：
+    // 分开查的话，「asset 的双矩形配 ic-bad」这种串档会两头各自命中而照样绿。
+    const pairs = [...proto.matchAll(/<div class="f-ic ([\w-]+)">(<svg[\s\S]*?<\/svg>)/g)]
+      .map((m) => [m[1], normWs(m[2])]);
+    assert.equal(pairs.length, 6, '原型里应恰好 6 个 .f-ic 块——本判据的前提（原型那六张卡）变了');
+    const ics = [...sectionById(html('index.html'), 'features')
+      .matchAll(/<div\b[^>]*\bclass="f-ic ([\w-]+)"[^>]*>([\s\S]*?)<\/div>/g)];
+    assert.equal(ics.length, copy.features.cards.length, '六卡的 .f-ic 切不出来');
+    ics.forEach(([, tint, inner], i) => {
+      const svg = normWs((inner.match(/<svg[\s\S]*?<\/svg>/) || [''])[0]);
+      assert.ok(svg, `第 ${i + 1} 卡的 .f-ic 里没有 <svg>`);
+      assert.ok(pairs.some(([pTint, pSvg]) => pTint === tint && pSvg === svg),
+        `第 ${i + 1} 卡的「${tint} + ${svg.slice(0, 56)}…」与原型里任何一对色底+图形都不逐字相同：图标被重画、被改写或配错了色底`);
+    });
+  });
+
 test('地基 2×2 在手机上塌成单列（.feat-grid-2 两条规则都在 APPENDIX）', () => {
   const css = readCss();
   const marker = css.indexOf('V1.1–V1.3 增补结构');
