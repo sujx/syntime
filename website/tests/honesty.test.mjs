@@ -676,6 +676,23 @@ const spanPerLine = (raw, stepNo) => raw.split('\n').map((seg) => {
   assert.ok(m, `第 ${stepNo} 步的代码有一行不是**恰好一个** <span>…</span>（裁定 6 要的就是逐行一块）：${JSON.stringify(seg)}`);
   return { cls: m[1].trim().split(/\s+/), text: unesc(m[2]) };
 });
+// 按 <div>/</div> 深度配平切卡片块：惰性 `</div>` 只到第一个就断，.qs-card 里套了 .step-n / .code /
+// .code-bar 三层 div，惰性版会把卡片切成半截（panelBlocks 同族坑，T7 评审 :422-425）。返回 {cls, block, index}
+// 数组，block 包含开标签本身与配平的 </div>；index 是开标签在 src 中的起始下标。
+const divBlocks = (src, token) => {
+  const opens = [...src.matchAll(new RegExp(`<div\\b[^>]*\\bclass="([^"]*)"`, 'g'))]
+    .filter((m) => m[1].trim().split(/\s+/).includes(token));
+  const re = /<div\b|<\/div>/g;
+  return opens.map((m) => {
+    re.lastIndex = m.index;
+    let depth = 0, hit;
+    while ((hit = re.exec(src))) {
+      depth += hit[0] === '</div>' ? -1 : 1;
+      if (depth === 0) return { cls: m[1], block: src.slice(m.index, hit.index + hit[0].length), index: m.index };
+    }
+    assert.fail(`${token} 在 ${m.index} 处的 <div> 找不到配平的 </div——深度配平失败`);
+  });
+};
 
 test('S6-3 数据门：四步序号连续、命令文本只活在 copy.yml 里、Docker 形态档位是 dev', () => {
   assert.equal(copy.quickstart.steps.length, 4, '设计方案 §2.1 段 7 固定四步');
@@ -731,15 +748,48 @@ test('S6-3 段 7 结构：暗极光段 + .qs-grid 里四步 + dev 徽章的 Dock
   assert.ok(sec, '段 7 必须在 .dark-sec 上（设计方案 §2.1 段 7 = 暗极光）');
   assert.ok(cls(sec).includes('sec'), '段 7 的开标签丢了 .sec（72px 上下留白）');
   // 裁定 3：.qs-grid 是版式承重墙——.qs-grid{repeat(3,1fr)}（main.css:153）、.qs-full{grid-column:1/-1}
-  // （:170）、≤900px 塌单列（:229）全挂在它身上；漏了容器则四步全宽竖排，而 tokens.test.mjs:109
+  // （:170）、≤900px 塌单列（:229）全挂在它身上；漏了容器则四步全宽竖排，而 tokens.test.mjs:108
   // 只断 CSS 里有 .qs-grid 这条规则，救不回 DOM。
   assert.equal(classTags(q, 'qs-grid').length, 1, '段 7 的卡必须包在唯一的 .qs-grid 里');
+  // Fix round 1 Important 1：qs-full 计数 + 容器内嵌。漏了 qs-full 则 .qs-full{grid-column:1/-1} 成空转，
+  // Docker 卡退化成三列之一；漏了容器则 qs-full 与四步卡全在 grid 外，版式判据集体失明。
+  assert.equal(classTags(q, 'qs-full').length, 1, 'Docker 预告卡必须恰好一枚 .qs-full（跨整列）');
+  const gridAt = classTags(q, 'qs-grid')[0].index;
+  const gridEnd = divBlocks(q, 'qs-grid')[0].block.length + gridAt;
+  const gridBlock = q.slice(gridAt, gridEnd);
+  assert.equal(classTags(gridBlock, 'qs-card').length, copy.quickstart.steps.length + 1,
+    '五张 .qs-card 必须全部在 .qs-grid 内（漏了容器则版式判据失明）');
+  assert.ok(gridBlock.includes(classTags(q, 'qs-full')[0][0]),
+    '.qs-full 卡必须在 .qs-grid 内（漏了容器则跨列规则失效）');
   assert.equal(classTags(q, 'step-n').length, copy.quickstart.steps.length, '序号圆点数必须等于四步');
   assert.equal(classTags(q, 'qs-card').length, copy.quickstart.steps.length + 1,
     '.qs-card 必须是四步 + Docker 卡共 5 张');
   for (const st of copy.quickstart.steps)
     assert.match(q, new RegExp(`<pre\\b[^>]*\\bid="qs-code-${st.no}"`), `第 ${st.no} 步没有自己的代码块`);
-  // 裁定 7：不再新增 `class="pill info badge"` 这种 token 串字面量（台账约束 13，T13 统一扫）。
+  // Fix round 1 Important 2：逐卡文案渲染。整段 includes 会被任何一张卡满足（T7 评审同族坑），
+  // 必须按 div 深度配平切出每张卡自己的块，再断言 strip+unesc 后包含该步的 title 与 body。
+  const cards = divBlocks(q, 'qs-card');
+  assert.equal(cards.length, copy.quickstart.steps.length + 1, '.qs-card 块数必须等于 5（四步 + Docker）');
+  for (const [i, st] of copy.quickstart.steps.entries()) {
+    const cardText = unesc(strip(cards[i].block));
+    assert.ok(cardText.includes(st.title), `第 ${st.no} 步的卡片没渲染 title「${st.title}」`);
+    assert.ok(cardText.includes(st.body), `第 ${st.no} 步的卡片没渲染 body「${st.body.slice(0, 40)}…」`);
+  }
+  // Docker 卡（最后一张）的 title + body 也按卡块断，防止整段 includes 被别处顶包。
+  const dockerCardText = unesc(strip(cards[cards.length - 1].block));
+  assert.ok(dockerCardText.includes(copy.quickstart.planned.title),
+    'Docker 卡没渲染 planned.title「' + copy.quickstart.planned.title + '」');
+  assert.ok(dockerCardText.includes(copy.quickstart.planned.body),
+    'Docker 卡没渲染 planned.body「' + copy.quickstart.planned.body.slice(0, 40) + '…」');
+  // 段级标题与副标题：sec-head 块内断言，防止整段 includes 被别处顶包。
+  const secHead = divBlocks(q, 'sec-head')[0];
+  assert.ok(secHead, '段 7 没有 .sec-head 容器');
+  const secHeadText = unesc(strip(secHead.block));
+  assert.ok(secHeadText.includes(copy.quickstart.heading),
+    '段 7 标题没渲染 heading「' + copy.quickstart.heading + '」');
+  assert.ok(secHeadText.includes(copy.quickstart.subheading),
+    '段 7 副标题没渲染 subheading「' + copy.quickstart.subheading + '」');
+  // 裁定 7：不再新增 pill info badge 这种 token 串字面量（台账约束 13，T13 统一扫）。
   // 按**文案**定位那枚徽章再判 token 集合：档位映射改了，判据跟着数据走，不用改判据本身。
   const tier = copy.quickstart.planned.badge;
   const devTxt = copy.labels.badges[tier];
@@ -767,6 +817,10 @@ test('S6-3 段 7 结构：暗极光段 + .qs-grid 里四步 + dev 徽章的 Dock
   });
   assert.doesNotMatch(env, /·/, '.qs-env 里残留 · —— 说明要么没切分，要么切了又整行再输一遍');
   assert.match(env, /Python 3\.12/, '环境要求必须写实值（V1.0 那行写的是 Docker）');
+  // Fix round 1 Minor 1：io/in 纪律循环的计数钉死。qs-card 已钉（5），qs-env 与 sec-head 各钉 1，
+  // 防止循环因某类元素缺失而空转（"absent 读作 pass" 的温床）。
+  assert.equal(classTags(q, 'qs-env').length, 1, '段 7 必须恰好一个 .qs-env（环境要求行）');
+  assert.equal(classTags(q, 'sec-head').length, 1, '段 7 必须恰好一个 .sec-head（标题区）');
   // 入场锁：与 T7 同源——只许 io，`in` 由 T10 的 IntersectionObserver 加（main.css:213）
   for (const t of [...classTags(q, 'qs-card'), ...classTags(q, 'qs-env'), ...classTags(q, 'sec-head')])
     assert.ok(cls(t).includes('io') && !cls(t).includes('in'), `${t[1]}：段 7 的 io/in 与约定不一致`);
@@ -780,20 +834,27 @@ test('T8 逐行数据门：每步代码块与 copy.quickstart.steps[].code 逐�
   for (const st of copy.quickstart.steps) {
     const raw = preById(s, `qs-code-${st.no}`);
     assert.ok(raw, `第 ${st.no} 步没有代码块`);
+    // Fix round 1 Minor 4：失败消息点名实际步骤，不写死 [0]。
     assert.deepEqual(preLines(raw), want(st),
-      `第 ${st.no} 步的代码块与 copy.quickstart.steps[0].code 不逐行相等（多行 / 少行 / 改写都算）`);
+      `第 ${st.no} 步的代码块与 copy.quickstart.steps[${st.no - 1}].code 不逐行相等（多行 / 少行 / 改写都算）`);
     // 裁定 6 的空白纪律：`<pre>` 里可见空白全算内容——换行数必须恰好 lines.length-1，
     // 行首不得有模板带进去的缩进。
     assert.equal((raw.match(/\n/g) || []).length, want(st).length - 1,
       `第 ${st.no} 步的换行数不是 lines-1：模板往 <pre> 里喂了多余空白`);
-    assert.doesNotMatch(raw, /\n[ \t]/, `第 ${st.no} 步的 <pre> 内容有行首缩进（pre 的空白全可见）`);
+    // Fix round 1 Minor 3：删除 `assert.doesNotMatch(raw, /\n[ \t]/)` —— 冗余且 false-red-prone。
+    // 冗余：模板引入的缩进已被上面 deepEqual（:837）与换行计数（:841）双重覆盖（M9 证据）。
+    // False-red：合法的 bash 续行（原型 :720-721 的 `docker run … \` + 两空格缩进 `-e DATABASE_URL=…`）
+    // 会让此断言误红，而 deepEqual 因 copy 同源照样绿。保留换行计数（更清晰的诊断）。
   }
   // clone 行的唯一来源是占位符（Task 2 的单一来源；copy.yml:168 的注释授权的正是这一处拼装）
   const first = preLines(preById(s, 'qs-code-1'))[0];
   assert.equal(first, `git clone ${copy.placeholders.github_url}.git`,
     'step 1 首行不是由 placeholders.github_url 现拼的 clone 命令');
-  assert.equal((s.match(/git clone/g) || []).length, 1,
-    '全页只许 step 1 那一处 git clone：别处再抄一份就是占位符之外的第二个来源');
+  // Fix round 1 Minor 2：git clone 计数收口到段 7，不扫全页。Task 9 FAQ 或 Task 12 公告若提及 git clone
+  // 会 false-red 全页计数；R-9 的 <pre>/段级收口纪律要求此处也按段收口。
+  const q = sectionById(s, 'quickstart');
+  assert.equal((q.match(/git clone/g) || []).length, 1,
+    '段 7 只许 step 1 那一处 git clone：别处再抄一份就是占位符之外的第二个来源');
 });
 
 test('T8 两色代码：# 开头的注释行走 .cmt、命令行走 .cmd，一行一块（不整块套一个 cmd）', () => {
@@ -827,6 +888,9 @@ test('T8 DOM 契约：每块 pre 配一枚 .copy-btn[data-copy]，data-label-don
     assert.equal(/aria-label="([^"]*)"/.exec(m[0])[1], copy.quickstart.copy_hint,
       'copy_hint 在原型语言里是无障碍说明，必须挂 aria-label 而不是可见文字');
     assert.equal(unesc(m[2].trim()), copy.labels.copy_button, '按钮可见文案只能是 labels.copy_button');
+    // Fix round 1 Minor 5：type="button" 钉死。index.ejs:160 保留此属性是为了防止 T10 脚本把按钮塞进
+    // <form> 时变成 submit（brief Step 3 的 DOM 契约）；无测试钉住则 rationale 不可持久。
+    assert.match(m[0], /\btype="button"/, '复制按钮必须 type="button"（防止被 form 包时变 submit）');
   }
 });
 
