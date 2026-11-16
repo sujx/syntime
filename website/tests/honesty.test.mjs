@@ -319,6 +319,10 @@ test('S6-2 渲染门：徽章与 note 逐卡落位、态派生自数据、各态
       `第 ${i + 1} 卡「${c.title}」的 ${st} 徽章没渲染在卡内`);
     assert.match(card, new RegExp(`class="badge-note"[^>]*>\\s*${esc(c.badge_note.slice(0, 40))}`),
       `第 ${i + 1} 卡「${c.title}」的 badge_note 没渲染在卡内`);
+    // 标题/正文也逐卡锁：只查徽章和 note 时，模板整个删掉 <h3> 和 <p> 仍能全绿。
+    const text = strip(card);
+    assert.ok(text.includes(c.title), `第 ${i + 1} 卡的标题「${c.title}」没渲染在卡内`);
+    assert.ok(text.includes(c.body), `第 ${i + 1} 卡「${c.title}」的正文没渲染在卡内`);
   });
   // 绝对计数门：只断言「每卡都有自己的态」时，把两卡档位**互换**在整段层面看不出来；
   // 逐卡已能抓互换，这条再兜住「多画/少画徽章」，且红话直接指出是哪个态。
@@ -362,10 +366,13 @@ test('功能图标逐字节转录自原型 :464-489（按**标题**成对锁定�
     // 两个都被否掉的写法：① 只查「这对色底+图形在原型某处存在」——抓得住图形配错色底，
     // 抓不住两卡**整对互换**（A 卡画 B 卡的真图标也算"转录正确"，而它标错了功能）；
     // ② 按数组下标对齐 pairs[i]——卡序是**内容**，copy.yml 调序就该跟着调，按序对齐会假失败。
-    const byTitle = new Map([...proto.matchAll(
-      /<div class="f-ic ([\w-]+)">(<svg[\s\S]*?<\/svg>)<\/div>\s*<h3>([^<]*)<\/h3>/g)]
-      .map((m) => [m[3], [m[1], normWs(m[2])]]));
-    assert.equal(byTitle.size, 6, '原型里应恰好 6 个「色底+图形+标题」块——判据的前提（原型那六张卡）变了');
+    const blocks = [...proto.matchAll(
+      /<div class="f-ic ([\w-]+)">(<svg[\s\S]*?<\/svg>)<\/div>\s*<h3>([^<]*)<\/h3>/g)];
+    // 先数原始块再建 Map：只有 size 判据时，原型若多出第七块且标题与既有某卡重复，
+    // Map 去重后仍是 6，断言照样绿，而重复标题那张卡的图标被静默丢掉了。
+    assert.equal(blocks.length, 6, '原型里应恰好 6 个「色底+图形+标题」块——本判据的前提（原型那六张卡）变了');
+    const byTitle = new Map(blocks.map((m) => [m[3], [m[1], normWs(m[2])]]));
+    assert.equal(byTitle.size, 6, '原型六卡的 <h3> 标题有重复——标题不再是可用的配对键，改用别的配对方式');
     const cards = [...sectionById(html('index.html'), 'features')
       .matchAll(/<article\b[^>]*\bclass="feat-card[^"]*"[\s\S]*?<\/article>/g)].map((m) => m[0]);
     assert.equal(cards.length, copy.features.cards.length, '六卡的 <article> 切不出来');
