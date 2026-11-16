@@ -176,4 +176,44 @@
     </div>
   </div>
 </section>
+
+<%# 段 8 开源与定位：about-grid 两栏（左 statement + links，右 stack chips），CSS 已转录自原型 :511-520。
+    R-4 备案：l.href 走未转义输出（copy.yml 是受信任数据源， presently 安全；若将来 href 来源改为用户输入须切到转义输出）。 %>
+<section class="sec" id="about">
+  <div class="wrap">
+    <div class="sec-head io">
+      <h2 class="h2"><%= C.positioning.heading %></h2>
+    </div>
+    <div class="about-grid">
+      <div class="io">
+        <blockquote class="quote"><%= C.positioning.statement %></blockquote>
+        <p><%= C.positioning.statement_note %></p>
+        <div class="doc-links">
+          <% C.positioning.links.forEach(function(l){ %><a href="<%- url_for(l.href) %>"><%= l.text %></a><% }) %>
+        </div>
+      </div>
+      <div class="io">
+        <h3 class="stack-t">技术栈</h3>
+        <div class="chips">
+          <% C.positioning.stack.forEach(function(t){ %><span class="chip"><%= t %></span><% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%# 段 9 FAQ：details/summary 原生折叠，T10 无额外 JS 依赖。5 条全部来自 copy.faq.items[]。 %>
+<section class="sec sec-gray" id="faq">
+  <div class="wrap">
+    <div class="sec-head io"><h2 class="h2"><%= C.faq.heading %></h2></div>
+    <div class="faq">
+      <% C.faq.items.forEach(function(it){ %>
+      <details class="faq-card io">
+        <summary><%= it.q %><span class="tg" aria-hidden="true"></span></summary>
+        <div class="ans"><%= it.a %></div>
+      </details>
+      <% }) %>
+    </div>
+  </div>
+</section>
 </main>

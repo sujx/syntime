@@ -1,2 +1,23 @@
 <% const C = site.data.copy; %>
-<footer class="foot"><div class="wrap"><%= C.footer.brand %></div></footer>
+<!-- syntime.cn 已购买；解析与备案状态未核实，故只显示不链（copy.yml footer.domain） -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="brand">
+          <div class="seal s52">偕</div>
+          <div><div class="wm"><b class="syn">Syn</b><b class="t">Time</b></div>
+               <div class="wm-sub"><%= C.footer.brand %></div></div>
+        </div>
+      </div>
+      <div class="foot-col">
+        <h4>项目</h4>
+        <% C.footer.links.forEach(function(l){ %><a href="<%- l.href.startsWith('http') ? l.href : url_for(l.href) %>"><%= l.text %></a><% }) %>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span><%= C.footer.copyright %></span>
+      <span class="mono"><%= C.footer.domain %></span>
+    </div>
+  </div>
+</footer>

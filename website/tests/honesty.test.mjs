@@ -944,3 +944,101 @@ test('T8 CSS 门：h3 内联徽章的对齐只有一条来源，且空转声明 
     '增补段给 pill/badge 写了 position:static——本页没有任何规则把它们定位过，这是空转声明：'
     + dead.map((r) => r.selectors.join(',')).join(' | '));
 });
+
+// ---------------------------------------------------------------------------
+// T9 段 8–10：开源与定位 + FAQ（5 条）+ 页脚
+// ---------------------------------------------------------------------------
+
+// --- 段 8 开源与定位 ---
+
+test('段8 结构：<section id="about"> 存在且含 .about-grid', () => {
+  const s = html('index.html');
+  const sec = sectionById(s, 'about');
+  assert.ok(sec, 'public/index.html 里没有 <section id="about">');
+  assert.match(sec, /class="[^"]*about-grid[^"]*"/, '段 8 缺 .about-grid 容器');
+});
+
+test('段8 散文门：heading / statement / statement_note / stack[] / links[].text 全部渲染', () => {
+  const s = html('index.html');
+  const sec = sectionById(s, 'about');
+  assert.ok(sec, '段 8 缺位，散文门无从执行');
+  // heading
+  assert.ok(strip(sec).includes(copy.positioning.heading),
+    `段 8 没有渲染 positioning.heading「${copy.positioning.heading}」`);
+  // statement
+  assert.ok(strip(sec).includes(copy.positioning.statement),
+    `段 8 没有渲染 positioning.statement「${copy.positioning.statement}」`);
+  // statement_note
+  assert.ok(strip(sec).includes(copy.positioning.statement_note),
+    `段 8 没有渲染 positioning.statement_note`);
+  // stack[] — 每项技术栈标签
+  for (const t of copy.positioning.stack) {
+    assert.ok(strip(sec).includes(t), `段 8 没有渲染 stack 项「${t}」`);
+  }
+  // links[].text — 每条链接文案
+  for (const l of copy.positioning.links) {
+    assert.ok(strip(sec).includes(l.text), `段 8 没有渲染 link「${l.text}」`);
+  }
+});
+
+// --- 段 9 FAQ ---
+
+test('FAQ has the 5 V1.1 items and answers the badge-policy question', () => {
+  assert.equal(copy.faq.items.length, 5);
+  const s = html('index.html');
+  const f = sectionById(s, 'faq');
+  assert.ok(f, 'public/index.html 里没有 <section id="faq">');
+  assert.equal([...f.matchAll(/<details/g)].length, 5);
+  assert.match(f, /为什么页面上到处是/, 'V1.1 added badge-policy FAQ is required');
+});
+
+test('S6-2 two rewritten FAQ answers carry no superseded claims', () => {
+  const all = copy.faq.items.map((i) => i.q + i.a).join('\n');
+  assert.doesNotMatch(all, /三条链路/);
+  assert.doesNotMatch(all, /开箱即用/);
+  assert.match(all, /两条/);
+  assert.match(all, /源码部署/);
+});
+
+test('段9 散文门：faq.heading + 每条 Q/A 都渲染', () => {
+  const s = html('index.html');
+  const sec = sectionById(s, 'faq');
+  assert.ok(sec, '段 9 缺位，散文门无从执行');
+  // heading
+  assert.ok(strip(sec).includes(copy.faq.heading),
+    `段 9 没有渲染 faq.heading「${copy.faq.heading}」`);
+  // 每条 Q 与 A
+  for (const [i, it] of copy.faq.items.entries()) {
+    assert.ok(strip(sec).includes(it.q), `段 9 没有渲染第 ${i + 1} 条 Q「${it.q}」`);
+    assert.ok(strip(sec).includes(it.a), `段 9 没有渲染第 ${i + 1} 条 A`);
+  }
+});
+
+// --- 段 10 页脚 ---
+
+test('footer shows the domain but does not link it (DNS/ICP unverified)', () => {
+  const s = html('index.html');
+  const f = (s.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/) || [''])[0];
+  assert.ok(f, 'public/index.html 里没有 <footer>');
+  assert.ok(f.includes(copy.footer.domain));
+  // R-3：domain 里的 . 是正则元字符，必须走 esc()
+  assert.doesNotMatch(f, new RegExp('<a[^>]*>\\s*' + esc(copy.footer.domain)),
+    'domain must not be an <a>');
+});
+
+test('段10 散文门：brand / links[].text / copyright / domain 全部渲染', () => {
+  const s = html('index.html');
+  const f = (s.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/) || [''])[0];
+  assert.ok(f, '页脚缺位，散文门无从执行');
+  const ft = strip(f);
+  // brand
+  assert.ok(ft.includes(copy.footer.brand), `页脚没有渲染 footer.brand「${copy.footer.brand}」`);
+  // links[].text
+  for (const l of copy.footer.links) {
+    assert.ok(ft.includes(l.text), `页脚没有渲染 footer link「${l.text}」`);
+  }
+  // copyright
+  assert.ok(ft.includes(copy.footer.copyright), `页脚没有渲染 footer.copyright`);
+  // domain
+  assert.ok(ft.includes(copy.footer.domain), `页脚没有渲染 footer.domain「${copy.footer.domain}」`);
+});
