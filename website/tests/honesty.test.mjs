@@ -355,22 +355,30 @@ test('S6-3 no feature card body repeats a claim the note walks back', () => {
 const PROTO_URL = new URL('../../../高保真原型_宣传站.html', import.meta.url);
 const normWs = (x) => x.replace(/\s+/g, '');
 
-test('功能图标逐字节转录自原型 :464-489（色底与图形**成对**对得上，不重画、不串档）',
+test('功能图标逐字节转录自原型 :464-489（按**标题**成对锁定：不重画、不串档、不整对互换）',
   existsSync(PROTO_URL) ? {} : { skip: '原型 HTML 不在约定路径，转录判据无从比对' }, () => {
     const proto = readFileSync(PROTO_URL, 'utf8');
-    // 原型侧把「色底 + 那一块的完整 <svg>」作为**一对**取出，而不是两件事各自全局查存在性：
-    // 分开查的话，「asset 的双矩形配 ic-bad」这种串档会两头各自命中而照样绿。
-    const pairs = [...proto.matchAll(/<div class="f-ic ([\w-]+)">(<svg[\s\S]*?<\/svg>)/g)]
-      .map((m) => [m[1], normWs(m[2])]);
-    assert.equal(pairs.length, 6, '原型里应恰好 6 个 .f-ic 块——本判据的前提（原型那六张卡）变了');
-    const ics = [...sectionById(html('index.html'), 'features')
-      .matchAll(/<div\b[^>]*\bclass="f-ic ([\w-]+)"[^>]*>([\s\S]*?)<\/div>/g)];
-    assert.equal(ics.length, copy.features.cards.length, '六卡的 .f-ic 切不出来');
-    ics.forEach(([, tint, inner], i) => {
-      const svg = normWs((inner.match(/<svg[\s\S]*?<\/svg>/) || [''])[0]);
-      assert.ok(svg, `第 ${i + 1} 卡的 .f-ic 里没有 <svg>`);
-      assert.ok(pairs.some(([pTint, pSvg]) => pTint === tint && pSvg === svg),
-        `第 ${i + 1} 卡的「${tint} + ${svg.slice(0, 56)}…」与原型里任何一对色底+图形都不逐字相同：图标被重画、被改写或配错了色底`);
+    // 原型把「色底 + 图形」绑在**标题**上（`:464-489` 每卡的 f-ic 紧跟 h3），所以按标题取一对。
+    // 两个都被否掉的写法：① 只查「这对色底+图形在原型某处存在」——抓得住图形配错色底，
+    // 抓不住两卡**整对互换**（A 卡画 B 卡的真图标也算"转录正确"，而它标错了功能）；
+    // ② 按数组下标对齐 pairs[i]——卡序是**内容**，copy.yml 调序就该跟着调，按序对齐会假失败。
+    const byTitle = new Map([...proto.matchAll(
+      /<div class="f-ic ([\w-]+)">(<svg[\s\S]*?<\/svg>)<\/div>\s*<h3>([^<]*)<\/h3>/g)]
+      .map((m) => [m[3], [m[1], normWs(m[2])]]));
+    assert.equal(byTitle.size, 6, '原型里应恰好 6 个「色底+图形+标题」块——判据的前提（原型那六张卡）变了');
+    const cards = [...sectionById(html('index.html'), 'features')
+      .matchAll(/<article\b[^>]*\bclass="feat-card[^"]*"[\s\S]*?<\/article>/g)].map((m) => m[0]);
+    assert.equal(cards.length, copy.features.cards.length, '六卡的 <article> 切不出来');
+    cards.forEach((card, i) => {
+      const c = copy.features.cards[i];
+      const m = card.match(/<div\b[^>]*\bclass="f-ic ([\w-]+)"[^>]*>([\s\S]*?)<\/div>/);
+      assert.ok(m, `第 ${i + 1} 卡「${c.title}」里没有 .f-ic`);
+      const svg = normWs((m[2].match(/<svg[\s\S]*?<\/svg>/) || [''])[0]);
+      assert.ok(svg, `第 ${i + 1} 卡「${c.title}」的 .f-ic 里没有 <svg>`);
+      const want = byTitle.get(c.title);
+      assert.ok(want, `原型里没有标题为「${c.title}」的功能卡——判据靠标题配对，图标对应关系需重新确认`);
+      assert.deepEqual([m[1], svg], want,
+        `第 ${i + 1} 卡「${c.title}」的图标不是原型**同一张卡**的色底+图形逐字转录（原型 ${want[0]}，产物 ${m[1]}）：图标被重画、改写、配错色底或与别卡整对互换`);
     });
   });
 
