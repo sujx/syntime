@@ -1,0 +1,7 @@
+# 截图母图（2x PNG，约 5MB）与 headless Chromium 的临时 profile 不入库；
+# 交付物（gallery/*.webp|*.png、hero-login.webp、og-image.png）是要提交的。
+source/images/_shots/
+tools/.chrome-profile/
+public/
+db.json
+node_modules/

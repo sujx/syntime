@@ -1,0 +1,235 @@
+# SynTime 宣传站文案单一来源（内容层）
+#
+# 规则（设计稿 §3 / §4）：所有面向访客的中文文案集中在此，模板只引用变量，
+# 禁止在 EJS 里散落硬编码中文——日后抽英文字典仅换数据源，不动模板。
+#
+# 发布轴（2026-11-16 拍板）：**目标轴 + 显著 ALPHA 标注**。
+# 卖点按 PRD 全貌写，但每个能力必须带状态徽章，徽章档位逐条对着代码定档，
+# 依据与出处见 docs/宣传站设计方案_Hexo.md §3.5。不得按 PRD 愿望打 shipped。
+#
+# 状态四档 → design.md §5.7 pill 五态的映射（刻意与应用内「二期规划 = info」不同：
+# 宣传页需同时区分四档，同色会让「开发中」与「二期」混为一谈）：
+#   shipped → ok     partial → warn     dev → info     phase2 → mute
+# 印章红 #C0392B 禁止进入徽章、按钮与强调文案（design.md §2 规则）。
+
+meta:
+  lang: zh-CN
+  title: "SynTime · 与时偕行 —— 免费开源的私有化多云成本管理平台"
+  description: "按项目标签归集云费用，预算、资产、事件、治理一站看清，部署在你自己的服务器上。"
+  # og:image 用 1200×630 PNG（由仪表盘截图首屏生成）。**不用 WebP**：社交抓取器
+  # （微信 / Twitter / Facebook）对 WebP 支持不稳，OG 惯例是 JPEG/PNG。
+  og_image: "/images/og-image.png"
+
+# ---------------------------------------------------------------------------
+# 发布前必须与真实资源对齐的占位符（设计稿 §6「内容」验收项）
+# TODO(发布前): 填 GitHub 组织/仓库名
+# TODO(发布前): 填 DockerHub 命名空间/镜像名；镜像尚未发布，勿对外宣称可用
+# TODO(发布前): syntime.cn 的 DNS 解析、实名认证与备案状态本轮未核实，落地前确认
+# ---------------------------------------------------------------------------
+placeholders:
+  github_repo: "TODO_GITHUB_OWNER/SynTime"
+  dockerhub_image: "TODO_DOCKERHUB_NAMESPACE/syntime"
+  docs_entry: "/docs/"
+  changelog: "/updates/"
+
+alpha_banner:
+  text: "当前为 ALPHA 阶段：地基与查询链路可用，云厂商自动同步仍在开发中。页面每个能力都标注了真实状态。"
+  badge: dev
+
+labels:
+  badges:
+    shipped: "已上线"
+    partial: "部分上线"
+    dev: "开发中"
+    phase2: "二期"
+  badge_pill_state:
+    shipped: ok
+    partial: warn
+    dev: info
+    phase2: mute
+  copy_button: "复制"
+  copy_done: "已复制"
+
+nav:
+  brand: "SynTime · 与时偕行"
+  anchors:
+    - { text: "已上线地基", href: "#foundation" }
+    - { text: "功能", href: "#features" }
+    - { text: "界面速览", href: "#gallery" }
+    - { text: "快速开始", href: "#quickstart" }
+    - { text: "常见问题", href: "#faq" }
+  links:
+    - { text: "更新日志", href: "/updates/" }
+  cta:
+    text: "GitHub"
+    href: "https://github.com/TODO_GITHUB_OWNER/SynTime"
+
+hero:
+  title: "把多云账单，汇算成一本明白账"
+  subtitle: "SynTime（与时偕行）是一个免费开源的私有化多云成本管理平台：按项目标签归集云费用，预算、资产、事件、治理一站看清，部署在你自己的服务器上。"
+  ctas:
+    - { text: "GitHub 获取源码", style: primary, href: "https://github.com/TODO_GITHUB_OWNER/SynTime" }
+    - { text: "自行部署快速开始", style: secondary, href: "#quickstart" }
+  feats:
+    - "多云账单统一归集"
+    - "项目级财务汇算"
+    - "预算与到期双预警"
+  screenshot_alt: "SynTime 仪表盘界面（取自高保真设计稿）"
+  # 设计稿 §4 标 *可选* 的登录页背景素材（2026-11-16 已产出，是否启用由第 3 段版式决定）
+  hero_image: "/images/hero-login.webp"
+
+pills:
+  - "免费开源 · Apache-2.0"
+  - "私有化部署 · 数据不出内网"
+  - "单组织部署 · 无多租户复杂度"
+  - "本期阿里云（账单 + 资产）· 四云扩展位已预留"
+
+# 结构性增补（2026-11-16 批准）：首页由 9 段变 10 段，先给访客一块真的「已上线」。
+# 四条均有代码证据，见设计稿 §3.5 表。
+foundation:
+  heading: "已经打实的地基"
+  subheading: "这四条不是规划，是现在就能在你机器上跑起来的实现。"
+  items:
+    - title: "口径守恒的金额链路"
+      body: "金额全链路 Decimal、不做浮点；预聚合按天整日重算后覆盖写，重复跑不产生重复金额，负数退款行照常参与，可与账单总额对平。"
+      badge: shipped
+    - title: "幂等到偏执"
+      body: "账单、同步窗口、日聚合、资产、事件、厂商消息六条业务唯一键全部走唯一键兜底 + upsert，重复同步、重复扫描、并发触发都不脏数据。"
+      badge: shipped
+    - title: "凭据信封加密"
+      body: "云账号 AK/SK 以 AES-256-GCM 加密，HKDF-SHA256 按密钥版本派生数据密钥，AAD 绑定账号与字段防密文挪用；主密钥不落代码，日志层自动脱敏。"
+      badge: shipped
+    - title: "财务角色字段级隔离"
+      body: "财务人员看到的成本与事件数据中，实例 ID 等资源标识统一在序列化层置空——屏蔽只发生在一处，不会各页各漏一个。"
+      badge: shipped
+
+features:
+  heading: "功能特性"
+  subheading: "按 PRD 全貌呈现；徽章标出本期真正做到了哪一半。"
+  cards:
+    - id: settlement
+      title: "项目财务汇算"
+      body: "按项目标签自动归集 ECS / RDS / EIP / NAT / 域名费用，项目汇总一键下钻到实例账单，环比口径可追溯、可复算。"
+      badge: partial
+      badge_note: "汇算口径与三个查询接口（项目汇总 / 资源明细下钻 / 成本趋势）已上线并通过测试；「自动归集」所依赖的账单同步任务仍在开发中，当前可用演示数据或域名 CSV 导入先跑通。"
+    - id: budget
+      title: "预算与定期清单"
+      body: "按账期月配置预算，超支整行高亮；月度 / 季度固定模板一键导出，每期提交财务的格式永远一致。"
+      badge: partial
+      badge_note: "预算表、超支比例计算、超支预警事件已上线；「一键导出固定模板清单」属本期未完成项，正在开发。"
+    - id: asset
+      title: "资产台账"
+      body: "跨账号、跨地域的资源清单，域名也是一等公民：到期时间、注册商、DNS 服务器一目了然，T-30 / T-7 / T-1 自动预警。"
+      badge: partial
+      badge_note: "资产模型（含注册商 / 实名状态 / DNS / 到期时间 / 计费方式）、域名 CSV 批量导入与到期三档预警已上线；资产清单查询接口与资产自动同步待完成。"
+    - id: events
+      title: "事件中心"
+      body: "欠费、停机、流量异常、续费成功统一留痕：厂商消息与平台自算双通道，未识别消息全程可见、不静默丢弃。"
+      badge: partial
+      badge_note: "事件列表、状态流转（含权限校验）与平台自算三类预警（域名即将到期 / 已过期 / 预算超支）已上线；厂商消息通道及欠费 / 停机 / 流量 / 续费四类事件按 Q20 决议顺延二期。"
+    - id: governance
+      title: "成本治理"
+      body: "包年已停机、长期停机、EIP 未绑定、域名过期等疑似浪费清单化呈现，未分配成本占比治理目标 ≤ 5%。"
+      badge: partial
+      badge_note: "治理页的汇总 / 下钻 / 趋势视图已接线可用；闲置资源清单本身（后端仅有索引与状态变更字段，判定服务与接口尚未开发）为本期未完成项。"
+    - id: export
+      title: "异步报表导出"
+      body: "大数据量后台异步生成，签名临时链接 24 小时有效，导出文件与页面数据同源一致。"
+      badge: dev
+      badge_note: "整卡能力待实现：异步任务数据模型已就位，导出链路、签名链接与文件生成尚未开发。"
+
+gallery:
+  heading: "界面速览"
+  subheading: "四张主要页面。"
+  # 诚实装置：截图来源是高保真原型，不是运行中的产品，图注必须说实话（设计稿 §3.5）
+  disclaimer: "以下界面取自高保真设计稿（1440px 宽视口；仪表盘与项目汇算为整页截取），非产品运行实况。"
+  segments:
+    - { title: "项目汇算", image: "/images/gallery/settlement.webp", alt: "项目汇算页面：按项目标签汇总的云成本表格" }
+    - { title: "仪表盘", image: "/images/gallery/dashboard.webp", alt: "仪表盘页面：KPI 卡片、成本趋势与数据同步状态区" }
+    - { title: "事件中心", image: "/images/gallery/events.webp", alt: "事件中心页面：分级预警事件列表与状态流转" }
+    - { title: "成本治理", image: "/images/gallery/governance.webp", alt: "成本治理页面：汇总、明细下钻与趋势" }
+
+quickstart:
+  heading: "快速开始"
+  subheading: "现在是源码部署；一条命令拉起的形态在开发中。"
+  # 设计稿 V1.0 此处写的是单条 docker run，实测该命令跑不通（全仓无 Dockerfile、
+  # 无镜像，且单容器起不来 Celery worker/beat 与 Redis）。按真实可行的步骤改写。
+  steps:
+    - no: 1
+      title: "准备依赖与环境"
+      body: "PostgreSQL 15+（本项目在 17 上开发与实测）与 Redis 就绪；克隆仓库，用 uv 建 Python 3.12 虚拟环境并安装开发依赖。"
+      code: |
+        git clone https://github.com/TODO_GITHUB_OWNER/SynTime.git
+        cd SynTime/syntime/backend
+        uv venv --python 3.12 && . .venv/bin/activate
+        uv pip install -r requirements/dev.txt
+    - no: 2
+      title: "配置环境变量"
+      body: "至少给 `SYNTIME_SECRET_KEY` 与数据库口令；AK/SK 加密主密钥可用 `SYNTIME_MASTER_KEY` 或密钥文件，DEBUG 下会自动生成开发用兜底密钥。"
+      code: |
+        # backend/.env（已 gitignore，勿提交）
+        SYNTIME_SECRET_KEY=<自行生成>
+        SYNTIME_DB_NAME=syntime_dev
+        SYNTIME_DB_USER=syntime
+        SYNTIME_DB_PASSWORD=<你的口令>
+    - no: 3
+      title: "建表、初始化角色与管理员"
+      body: "15 张表由迁移建出；三角色 Group 幂等初始化；管理员自建。想先逛一遍可以灌演示数据。"
+      code: |
+        python manage.py migrate
+        python manage.py init_roles
+        python manage.py createsuperuser
+        python manage.py seed_demo   # 可选：演示数据
+    - no: 4
+      title: "起 Web 与 Celery（三个进程）"
+      body: "worker 与 beat 是两个独立进程，开发期请开三个终端。"
+      code: |
+        python manage.py runserver
+        celery -A config worker -l info
+        celery -A config beat -l info
+  copy_hint: "复制上方命令"
+  planned:
+    title: "Docker 一条命令拉起"
+    body: "镜像尚未发布；届时仍需 PostgreSQL 与 Redis 两个依赖服务，单一容器起不来 worker 与 beat，命令形态以发布说明为准。"
+    badge: dev
+  requirements: "环境要求：Python 3.12 · PostgreSQL 15+（开发实测环境 17）· Redis · 本期仅阿里云只读 AK/SK"
+
+positioning:
+  heading: "开源与定位"
+  statement: "先展示、后治理。"
+  statement_note: "SynTime 是免费开源的个人作品，源码与镜像均免费发放，无付费版本、无功能阉割、无内置计费与订阅。它以「现状」提供，不承诺商用支持。"
+  stack:
+    - "Django 5.2"
+    - "Ant Design 5"
+    - "PostgreSQL 15+"
+    - "Celery 5.5"
+    - "Docker 镜像（发布中）"
+  links:
+    - { text: "设计决策记录", href: "/docs/adr/" }
+    - { text: "产品需求文档", href: "/docs/PRD.md" }
+    - { text: "更新日志", href: "/updates/" }
+
+faq:
+  heading: "常见问题"
+  items:
+    - q: "要花钱吗？"
+      a: "免费。SynTime 是个人作品，按 Apache-2.0 发放，源码与镜像都免费，没有付费版本，也没有功能阉割。"
+    - q: "数据安全吗？"
+      a: "完全私有化：账单、资产、事件全部落在你自己的 PostgreSQL，不经任何第三方。云账号 AK/SK 以 AES-256-GCM 信封加密存储、主密钥不落代码，日志层自动脱敏；授予厂商的权限只需账单与资源的只读最小权限。"
+    - q: "支持哪些云厂商？"
+      a: "本期支持阿里云的账单与资产两条链路；厂商消息（事件推送）链路按决议顺延到二期。架构上已预留腾讯云、华为云、京东云、AWS 的适配位。"
+    - q: "部署复杂吗？"
+      a: "现在走源码部署：PostgreSQL + Redis，四个命令段落即可完成，另有演示数据命令可以立刻逛一遍所有页面。一条 `docker run` 拉起的形态仍在开发中。"
+    - q: "为什么页面上到处是「开发中」和「二期」徽章？"
+      a: "因为 ALPHA 阶段说真话比好看的卖点更有用。每个徽章都逐条对着代码定档，依据公开在设计稿的能力档位表里；已完成的部分可以直接跑，未完成的部分标清楚，不会让你点了才发现没有。"
+
+footer:
+  brand: "SynTime · 与时偕行"
+  links:
+    - { text: "GitHub", href: "https://github.com/TODO_GITHUB_OWNER/SynTime" }
+    - { text: "DockerHub", href: "https://hub.docker.com/r/TODO_DOCKERHUB_NAMESPACE" }
+    - { text: "更新日志", href: "/updates/" }
+    - { text: "文档", href: "/docs/" }
+  copyright: "© 2026 SynTime · 与时偕行 · 免费开源的个人作品，按“现状”提供"
+  # 域名已购买（2026-11-16 用户确认）；解析与备案状态未核实，故此处只显示域名本身
+  domain: "syntime.cn"
