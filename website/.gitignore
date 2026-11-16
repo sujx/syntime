@@ -5,3 +5,4 @@ tools/.chrome-profile/
 public/
 db.json
 node_modules/
+_multiconfig.yml

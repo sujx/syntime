@@ -90,6 +90,7 @@ section{scroll-margin-top:96px}
 .hero-copy{animation:fadeUp .5s var(--ease-out) both}
 .hero-visual{position:relative;animation:cardIn .6s var(--ease-out) .1s both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes cardIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
 
 /* 浏览器框（登录卡语言：24px 圆角 + 品牌阴影） */
 .browser{background:#fff;border-radius:24px;box-shadow:var(--shadow-brand);overflow:hidden;border:1px solid rgba(255,255,255,.6)}

@@ -25,8 +25,7 @@ highlight:
 sitemap:
   path: sitemap.xml
 
-index_generator:
-  path: ''
-  per_page: 1
+# 首页 = source/index.md 走 page 路由生成（构建产物 public/index.html 实测）；
+# 本站不装 hexo-generator-index，故**不写** index_generator 配置——写了没有消费者，是陷阱。
 date_format: YYYY-MM-DD
 time_format: HH:mm:ss
