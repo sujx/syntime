@@ -70,6 +70,12 @@ def stopped_since(asset: CloudAsset) -> datetime | None:
     `align_assets` 与 `upsert_domain` 都写前两个，但 `seed_demo` 与 Admin 手工录入的行实测
     两列皆空；`create_time` 由 `auto_now_add` 恒有值，语义同为「进入平台的时间」。
     代价：对「先入库、后停机」的行会低估停机时长（与 D8 的接受高估方向相反，已在 spec 登记）。
+
+    Args:
+        asset: 待取停机起点的资产（可以是未保存实例，口径同 `judge`）。
+
+    Returns:
+        三级回退中第一个非空的时间戳；三列皆空时为 None（判据 ② 此时不给结论）。
     """
     return asset.status_changed_at or asset.first_seen_at or asset.create_time
 

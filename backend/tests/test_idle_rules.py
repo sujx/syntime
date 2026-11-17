@@ -11,8 +11,10 @@ from zoneinfo import ZoneInfo
 from apps.assets.idle_rules import (
     IDLE_DOMAIN_EXPIRED,
     IDLE_EIP_UNBOUND,
+    IDLE_NOTICE,
     IDLE_POSTPAID_STOPPED,
     IDLE_PREPAID_STOPPED,
+    IDLE_TYPES,
     IdleConfig,
     judge,
 )
@@ -31,7 +33,7 @@ def _asset(**overrides: object) -> CloudAsset:
         "charge_type": "postpaid",
     }
     base.update(overrides)
-    return CloudAsset(**base)  # type: ignore[arg-type]
+    return CloudAsset(**base)
 
 
 # ---------- 判据 ① 包年包月已停机 ----------
@@ -54,6 +56,15 @@ def test_postpaid_stopped_over_threshold_hits() -> None:
     assert verdict.idle_type == IDLE_POSTPAID_STOPPED
     assert verdict.key_metric == {"stoppedDays": 15, "thresholdDays": 14}
     assert verdict.reason == "按量付费已停机 15 天（阈值 14 天）"
+
+    # 口径边界：PRD 3.14-1 / spec §5 是「持续 **≥** N 天」，恰好 N 天（=14）也必须出结论。
+    # 若判据被写成 `>`，这一行就掉出清单而其它用例（15/20/30/13 天）全不受影响。
+    at_threshold = judge(
+        _asset(status=STOPPED, status_changed_at=NOW - timedelta(days=14)), CONFIG, NOW
+    )
+    assert at_threshold is not None
+    assert at_threshold.idle_type == IDLE_POSTPAID_STOPPED
+    assert at_threshold.key_metric["stoppedDays"] == 14
 
 
 def test_postpaid_stopped_below_threshold_absent() -> None:
@@ -149,6 +160,22 @@ def test_eip_stopped_prepaid_takes_criterion_one() -> None:
     verdict = judge(_asset(resource_type="eip", charge_type="prepaid", status=STOPPED), CONFIG, NOW)
     assert verdict is not None
     assert verdict.idle_type == IDLE_PREPAID_STOPPED
+
+
+def test_idle_types_tuple_order_and_notice_copy_are_pinned() -> None:
+    """钉死两条只有注释在保护的不变量（计划全局约束 + PRD 3.14-4）。
+
+    `IDLE_TYPES` 的**元素顺序就是** api.md 接口16 `idleType` 的枚举顺序，也是 `judge`
+    的短路优先序——两者是同一事实的两处书写，任一处被重排都不会改变其它用例的结果。
+    `IDLE_NOTICE` 是接口出参 notice 的单一来源（产品文案），改文案要在测试里可见。
+    """
+    assert IDLE_TYPES == (
+        IDLE_PREPAID_STOPPED,
+        IDLE_POSTPAID_STOPPED,
+        IDLE_EIP_UNBOUND,
+        IDLE_DOMAIN_EXPIRED,
+    )
+    assert IDLE_NOTICE == "闲置为状态推导的疑似结果，有意停机的资源请忽略"
 
 
 def test_running_asset_and_released_asset_absent() -> None:
