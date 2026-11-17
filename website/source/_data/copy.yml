@@ -64,6 +64,11 @@ labels:
   # 跳锚链接（裁定 R-4）：Tab 第一击落进正文，读屏用户的快速入口。
   # 文案取能念的短语，不写「跳过导航」这类技术术语。
   skip_link: "跳到正文"
+  # 品牌印章字（导航 .seal 与页脚 .seal.s52 共用同一来源）。
+  # 约束 1：模板里不得有内容层之外的中文；这个字形原先在 nav.ejs 和 footer.ejs 各硬写一次，
+  # 是「同一个字两处改」的形状，现在收进 labels.brand_glyphs.seal，两处都引它。
+  brand_glyphs:
+    seal: "偕"
 
 nav:
   anchors:
@@ -77,6 +82,11 @@ nav:
   cta:
     text: "GitHub"
     href: *gh_url
+  # 品牌副标（.wm-sub）。设计方案 §1 增补层的品牌三要素之一，属内容层不是表现层，
+  # 故从 nav.ejs 转进这里（T13 Step 2，约束 1）。
+  brand_sub: "与时偕行 · 多云成本管理"
+  # <nav aria-label> 的可访问名：读屏用户区分「页内锚点」与「站点导航」的唯一线索。
+  anchors_label: "页面锚点"
 
 hero:
   title: "把多云账单，汇算成一本明白账"
@@ -221,6 +231,8 @@ positioning:
     - "PostgreSQL 15+"
     - "Celery 5.5"
     - "Docker 镜像（发布中）"
+  # .stack-t 小标题（段 8 技术栈清单的题头），T13 Step 2 从 index.ejs 转进数据层。
+  stack_label: "技术栈"
   links:
     - { text: "设计决策记录", href: "/docs/adr/" }
     - { text: "产品需求文档", href: "/docs/PRD.md" }
@@ -247,6 +259,8 @@ footer:
     - { text: "DockerHub", href: *dh_url }
     - { text: "更新日志", href: "/updates/" }
     - { text: "文档", href: "/docs/" }
+  # 页脚第一栏的 <h4> 栏题（T13 Step 2 从 footer.ejs 转进数据层）。
+  col_projects: "项目"
   copyright: "© 2026 SynTime · 与时偕行 · 免费开源的个人作品，按“现状”提供"
   # 域名已购买（2026-11-16 用户确认）；解析与备案状态未核实，故此处只显示域名本身
   domain: "syntime.cn"

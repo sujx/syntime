@@ -11,6 +11,21 @@ const strip = (h) => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+
 // copy 文本要进 new RegExp：先转义正则元字符，否则文案里出现 ( ) [ ] . + 时会被当成语法而非字面量
 const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// T13 Step 2b（全局约束 13 的泛化，台账 R27(b) + R31）：判据此前把**同一个 class 属性值内部的
+// token 次序**也钉死了。badge.ejs 的 `cls.join(' ')` 一改 push 顺序、或 T10 给 `.pills-row`
+// 补一个 `io`，都会造成「逻辑没错却红」的假失败；反过来，用 `class="feat-card"` 这种**前缀紧邻**
+// 字面量切片段更坏——feat-card 不再是第一个 token 时切片静默为空，四道 T5 门一起变哑。
+// classVal(...tokens) 只钉「这几个 token 都在这个属性值里」，不钉先后：少一个、换成别的，仍然红
+// （T13 报告逐条变异取证）。属性之间的次序本来就由 `\\b[^>]*` 兜住，两者一套坐标系。
+// 两个陷阱：① `\bpill\b` 会命中 `pills-row`、`\bbadge\b` 会命中 `badge-note`（连字符也是词边界），
+// 所以按**空白分隔的 class token** 认，不按词边界认；② `(?:[^"]*\s)?` 负责「不在值首」，
+// `(?=[\s"])` 负责「不在值尾」，两头都钉住才有强度——只查 token 出现过等于没查。
+const classValSrc = (...tokens) =>
+  `class="${tokens.map((t) => `(?=(?:[^"]*\\s)?${esc(t)}(?=[\\s"]))`).join('')}[^"]*"`;
+const classVal = (...tokens) => new RegExp(classValSrc(...tokens));
+// 带 tag 的形状版：`<div\b[^>]*` + classVal —— 属性随便排，token 必须齐。
+const tagWith = (tag, ...tokens) => new RegExp(`<${tag}\\b[^>]*${classValSrc(...tokens)}`);
+
 // 判据加强③：honesty 读的是构建产物。缺位时给一条可执行提示（对齐 build.test.mjs 的 existsSync 守卫），
 // 而不是在模块加载阶段抛裸 ENOENT、把本文件其余判据一起带走。故产物在**用例内**读，不在顶层读。
 const pub = (p) => new URL(`../public/${p}`, import.meta.url);
@@ -23,12 +38,13 @@ const readCss = () => readFileSync(new URL('../source/css/main.css', import.meta
 
 test('S6-5 ALPHA banner is in the first screen, above the nav content', () => {
   const s = html('index.html');
-  assert.match(s, /class="alpha"/);
-  assert.ok(s.indexOf('class="alpha"') < s.indexOf('class="nav"'), 'banner must sit above nav');
+  assert.match(s, classVal('alpha'));
+  assert.ok(s.search(tagWith('header', 'nav')) > 0
+    && s.search(classVal('alpha')) < s.search(tagWith('header', 'nav')), 'banner must sit above nav');
   // 判据加强①：横幅的文字与徽章只在 `.alpha` → `<header class="nav"` 这一段里搜。
   // 整页搜的话，T5–T9 一旦出现任何 dev 卡（`pill info` + 「开发中」），删掉横幅徽章也能转绿——顶包。
-  const from = s.indexOf('class="alpha"');
-  const to = s.indexOf('<header class="nav"');
+  const from = s.search(classVal('alpha'));
+  const to = s.search(tagWith('header', 'nav'));
   assert.ok(to > from, '切片标记缺失：产物里 .alpha 必须在 <header class="nav"> 之前');
   const banner = s.slice(from, to);
   assert.ok(strip(banner).includes(copy.alpha_banner.text), '横幅文字必须落在 .alpha 之内');
@@ -37,7 +53,7 @@ test('S6-5 ALPHA banner is in the first screen, above the nav content', () => {
   // Fix round 1 裁定：class 与徽章文字之间用 [\s\S]*?。实测 `[^>]*` 是否定字符类、本来就含 \n，
   // 所以旧写法并未因换行静默失效（两种写法在当前产物上都为真）；此处取更宽容的形态以防别的回流，
   // 徽章文字错位/丢失仍然判红（见报告的反证 mutant）。
-  assert.match(banner, new RegExp(`class="pill ${esc(st)}"[\\s\\S]*?>${esc(txt)}<`),
+  assert.match(banner, new RegExp(`${classValSrc('pill', st)}[\\s\\S]*?>${esc(txt)}<`),
     `.alpha 里没有 ${txt} 徽章（应为 pill ${st}）；页面别处的同名 pill 不算数`);
 });
 
@@ -48,7 +64,7 @@ test('S6-5 banner contains no seal-red', () => {
 
 test('nav links mirror copy.nav.anchors and drop the prototype #screens', () => {
   const s = html('index.html');
-  const block = (s.match(/<nav class="nav-links"[\s\S]*?<\/nav>/) || [''])[0];
+  const block = (s.match(new RegExp(`${tagWith('nav', 'nav-links').source}[\\s\\S]*?<\\/nav>`)) || [''])[0];
   assert.ok(block, 'nav-links block missing');
   assert.equal([...block.matchAll(/<a /g)].length, copy.nav.anchors.length);
   for (const a of copy.nav.anchors) assert.ok(block.includes(`href="${a.href}"`), `missing ${a.href}`);
@@ -62,10 +78,10 @@ test('copy.nav carries no dead brand key', () => {
   assert.ok(!('brand' in copy.nav),
     'copy.nav.brand 是零引用死键（T4 fix round 2 已删）；要挂品牌文案请走 .wm/.wm-sub 的数据化，别复活这个键');
   const s = html('index.html');
-  const brand = (s.match(/<div class="brand">[\s\S]*?<\/nav>/) || [''])[0];
+  const brand = (s.match(new RegExp(`${tagWith('div', 'brand').source}[\\s\\S]*?<\\/nav>`)) || [''])[0];
   assert.ok(brand, 'nav 的品牌区 .brand 缺失');
-  for (const sel of ['class="seal"', 'class="wm"', 'class="wm-sub"']) {
-    assert.ok(brand.includes(sel), `品牌区必须由 ${sel} 出，现在找不到`);
+  for (const sel of ['seal', 'wm', 'wm-sub']) {
+    assert.ok(classVal(sel).test(brand), `品牌区必须由 class="${sel}" 出，现在找不到`);
   }
 });
 
@@ -175,8 +191,8 @@ test('S6-4 + CLS: Hero copy is on the page and img.shot carries the file\'s meas
   for (const [what, txt] of [['title', copy.hero.title], ['subtitle', copy.hero.subtitle], ['caption', copy.hero.caption]]) {
     assert.ok(strip(s).includes(txt), `Hero 的 ${what} 没进页面：${txt}`);
   }
-  // 全局约束 13：属性顺序无关（`<img src=… class="shot">` 一样要认，写死顺序就是假失败的来源）
-  const tag = (s.match(/<img\b[^>]*\bclass="shot"[\s\S]*?>/) || [''])[0];
+  // 全局约束 13 + T13 Step 2b：属性之间与 class 值内部的 token 都顺序无关（`<img class="shot io" src=…>` 一样要认）
+  const tag = (s.match(new RegExp(`${tagWith('img', 'shot').source}[^>]*>`)) || [''])[0];
   assert.ok(tag, 'Hero 的 img.shot 缺失');
   assert.ok(new RegExp(`alt="${esc(copy.hero.screenshot_alt)}"`).test(tag),
     'img.shot 的 alt 必须取自 copy.hero.screenshot_alt（§6 诚实性 ④ 的「设计稿非实况」标注在此）');
@@ -215,22 +231,22 @@ test('S6-1 渲染门：徽章逐卡落在 .feat-card 内、态派生自数据，
   // 红的是这一条——页面**真的**画出了非 shipped 态徽章。只留断数据那条，等于「只禁止改字典，不禁止页面画错」。
   for (const state of [...new Set(Object.keys(copy.labels.badge_pill_state)
     .filter((b) => b !== 'shipped').map(pillState))]) {
-    assert.equal([...cardHtml.matchAll(new RegExp(`class="pill ${esc(state)} badge"`, 'g'))].length, 0,
+    assert.equal([...cardHtml.matchAll(new RegExp(classValSrc('pill', state, 'badge'), 'g'))].length, 0,
       `地基段渲染出了 ${state} 态徽章：S6-1 的四条必须是 shipped 态（设计方案 §3.5）`);
   }
   // 卡数守恒（Important 1 第 2 条）：把 .feat-card 换成 <div> 时，逐卡判据会因为扫不到开标签而空转，这条先红。
-  assert.equal([...cardHtml.matchAll(/<article\b[^>]*\bclass="feat-card/g)].length, copy.foundation.items.length,
+  assert.equal([...cardHtml.matchAll(new RegExp(tagWith('article', 'feat-card').source, 'g'))].length, copy.foundation.items.length,
     '地基段 .feat-card 数量必须等于 copy.foundation.items.length');
-  const cards = [...cardHtml.matchAll(/<article\b[^>]*\bclass="feat-card[^"]*"[\s\S]*?<\/article>/g)].map((m) => m[0]);
+  const cards = [...cardHtml.matchAll(new RegExp(`${tagWith('article', 'feat-card').source}[\\s\\S]*?<\\/article>`, 'g'))].map((m) => m[0]);
   assert.equal(cards.length, copy.foundation.items.length, '按 <article…>…</article> 切不出 items.length 张地基卡');
   // 逐卡、卡内、派生自数据（Important 1 第 1 条）。评审给的写法是对整段 assert.match 惰性扫描，
   // 这里切到每张卡自己的片段再判：惰性扫描只需「某张卡之后存在一枚对的徽章」，四枚堆在第一张卡里也绿。
   cards.forEach((card, i) => {
     const it = copy.foundation.items[i];
-    assert.match(card, new RegExp(`class="pill ${esc(pillState(it.badge))} badge"`),
+    assert.match(card, new RegExp(classValSrc('pill', pillState(it.badge), 'badge')),
       `地基第 ${i + 1} 卡「${it.title}」的 ${pillState(it.badge)} 徽章没渲染在卡内`);
   });
-  assert.equal([...cardHtml.matchAll(new RegExp(`class="pill ${esc(pillState('shipped'))} badge"`, 'g'))].length,
+  assert.equal([...cardHtml.matchAll(new RegExp(classValSrc('pill', pillState('shipped'), 'badge'), 'g'))].length,
     copy.foundation.items.length, '地基段 shipped 态徽章数必须等于 items.length');
 });
 
@@ -248,23 +264,23 @@ test('S6-1 模板门：地基徽章由 partial(partial/badge) 的迭代变量出
   // 这三条专杀 Important 1a：删掉 partial、在 </section> 前硬写四枚 <span class="pill ok badge">。
   // 那种改法在产物上仍是 4 枚、逐卡判据也照样绿，只有模板源级判据能拦住——渲染与数据就此脱钩，
   // 将来某卡改档（partial/dev）也不会红，因为它根本不再读 items[].badge。
-  assert.doesNotMatch(idxSrc, /class="pill ok badge"/,
-    'index.ejs 里不得出现手写的 class="pill ok badge"');
-  assert.doesNotMatch(sec, /<span\b[^>]*\bclass="pill/,
+  assert.doesNotMatch(idxSrc, classVal('pill', 'ok', 'badge'),
+    'index.ejs 里不得出现手写的 class="pill … badge"（token 次序任意，见 classVal 注释）');
+  assert.doesNotMatch(sec, new RegExp(tagWith('span', 'pill').source),
     '地基段不得直接写 <span class="pill…">，徽章一律经 partial/partial/badge 出');
 });
 
 test('pills row renders all 4 positioning pills', () => {
   const s = html('index.html');
   assert.equal(copy.pills.length, 4);
-  // 先切容器再计数：ALPHA 横幅自己就是一枚 pill info（dev→info，public/index.html:24），
-  // 页级 matchAll(/class="pill info"/g) 会得到 5，把横幅那枚算进定位条头上。
-  const row = (s.match(/<div\b[^>]*\bclass="pills-row"[\s\S]*?<\/div>/) || [''])[0];
+  // 先切容器再计数：ALPHA 横幅自己就是一枚 pill info（dev→info，public/index.html 首屏），
+  // 页级 matchAll(classVal('pill','info')) 会得到 5，把横幅那枚算进定位条头上。
+  const row = (s.match(new RegExp(`${tagWith('div', 'pills-row').source}[\\s\\S]*?<\\/div>`)) || [''])[0];
   assert.ok(row, '段 3 的 .pills-row 容器缺失');
-  assert.equal([...row.matchAll(/class="pill info"/g)].length, copy.pills.length,
+  assert.equal([...row.matchAll(new RegExp(classValSrc('pill', 'info'), 'g'))].length, copy.pills.length,
     '定位条必须是 pills.length 枚 pill info（横幅那枚 pill info 在 .alpha 里，不在本容器内）');
-  assert.equal([...row.matchAll(/<span\b[^>]*\bclass="pill\b/g)].length, copy.pills.length,
-    '定位条里的 pill 总数就是 pills.length（`pill\b` 是为了不把容器自己的 class="pills-row" 数进来）');
+  assert.equal([...row.matchAll(new RegExp(tagWith('span', 'pill').source, 'g'))].length, copy.pills.length,
+    '定位条里的 pill 总数就是 pills.length（class token 认 `pill`，容器自己的 `pills-row` 不算进来）');
   for (const p of copy.pills) assert.ok(strip(row).includes(p), `定位条缺文案：${p}`);
   assert.doesNotMatch(s, /Docker 一键拉起/, 'V1.1 removed this pill (no image published)');
 });
@@ -312,16 +328,16 @@ test('S6-1 数据门：六卡档位逐字等于设计稿 §3.5 能力表，且 p
 test('S6-2 渲染门：徽章与 note 逐卡落位、态派生自数据、各态计数与档位表一致', () => {
   const sec = sectionById(html('index.html'), 'features');
   assert.ok(sec, 'public/index.html 里没有 <section id="features">');
-  const cards = [...sec.matchAll(/<article\b[^>]*\bclass="feat-card[^"]*"[\s\S]*?<\/article>/g)].map((m) => m[0]);
+  const cards = [...sec.matchAll(new RegExp(`${tagWith('article', 'feat-card').source}[\\s\\S]*?<\\/article>`, 'g'))].map((m) => m[0]);
   assert.equal(cards.length, copy.features.cards.length, '按 <article…>…</article> 切不出 6 张功能卡');
   cards.forEach((card, i) => {
     const c = copy.features.cards[i];
     const st = pillState(c.badge);
     // 徽章与 note 都必须在**这张卡自己的片段里**：整段 includes 会让「四枚徽章堆在第一张卡」
     // 或「所有 note 挤到最后一张卡」照样绿（T5 修复轮的同一族缺陷，别再犯）。
-    assert.match(card, new RegExp(`class="pill ${esc(st)} badge"`),
+    assert.match(card, new RegExp(classValSrc('pill', st, 'badge')),
       `第 ${i + 1} 卡「${c.title}」的 ${st} 徽章没渲染在卡内`);
-    assert.match(card, new RegExp(`class="badge-note"[^>]*>\\s*${esc(c.badge_note.slice(0, 40))}`),
+    assert.match(card, new RegExp(`${classValSrc('badge-note')}[^>]*>\\s*${esc(c.badge_note.slice(0, 40))}`),
       `第 ${i + 1} 卡「${c.title}」的 badge_note 没渲染在卡内`);
     // 标题/正文也逐卡锁：只查徽章和 note 时，模板整个删掉 <h3> 和 <p> 仍能全绿。
     const text = strip(card);
@@ -332,7 +348,7 @@ test('S6-2 渲染门：徽章与 note 逐卡落位、态派生自数据、各态
   // 逐卡已能抓互换，这条再兜住「多画/少画徽章」，且红话直接指出是哪个态。
   for (const [tier, st] of Object.entries(copy.labels.badge_pill_state)) {
     const want = copy.features.cards.filter((c) => c.badge === tier).length;
-    assert.equal([...sec.matchAll(new RegExp(`class="pill ${esc(st)} badge"`, 'g'))].length, want,
+    assert.equal([...sec.matchAll(new RegExp(classValSrc('pill', st, 'badge'), 'g'))].length, want,
       `功能段 ${tier}→${st} 态徽章数应为 ${want}`);
   }
 });
@@ -348,7 +364,7 @@ test('S6-1 模板门：徽章与图标都由迭代变量出，index.ejs 不手�
     "图标必须走 partial('partial/feat-icon', {id: c.id…})");
   assert.equal([...sec.matchAll(/partial\('partial\/badge'/g)].length, 1,
     '段 5 只该有循环里那一次徽章调用；多出来就说明有卡不再派生自 cards[]');
-  assert.doesNotMatch(sec, /<span\b[^>]*\bclass="pill/, '段 5 不得直接写 <span class="pill…">');
+  assert.doesNotMatch(sec, new RegExp(tagWith('span', 'pill').source), '段 5 不得直接写 <span class="pill…">');
 });
 
 test('S6-3 no feature card body repeats a claim the note walks back', () => {
@@ -378,18 +394,24 @@ test('功能图标逐字节转录自原型 :464-489（按**标题**成对锁定�
     const byTitle = new Map(blocks.map((m) => [m[3], [m[1], normWs(m[2])]]));
     assert.equal(byTitle.size, 6, '原型六卡的 <h3> 标题有重复——标题不再是可用的配对键，改用别的配对方式');
     const cards = [...sectionById(html('index.html'), 'features')
-      .matchAll(/<article\b[^>]*\bclass="feat-card[^"]*"[\s\S]*?<\/article>/g)].map((m) => m[0]);
+      .matchAll(new RegExp(`${tagWith('article', 'feat-card').source}[\\s\\S]*?<\\/article>`, 'g'))].map((m) => m[0]);
     assert.equal(cards.length, copy.features.cards.length, '六卡的 <article> 切不出来');
     cards.forEach((card, i) => {
       const c = copy.features.cards[i];
-      const m = card.match(/<div\b[^>]*\bclass="f-ic ([\w-]+)"[^>]*>([\s\S]*?)<\/div>/);
-      assert.ok(m, `第 ${i + 1} 卡「${c.title}」里没有 .f-ic`);
-      const svg = normWs((m[2].match(/<svg[\s\S]*?<\/svg>/) || [''])[0]);
+      // 产物侧按 class **token** 认容器，色底 token 从属性值里现取：`f-ic` 与 `ic-*` 谁在前都认。
+      // 原型侧（上面那条 matchAll）仍用逐字面量——原型字节不可变，钉死它的形态不是脆性。
+      const ico = (card.match(new RegExp(`${tagWith('div', 'f-ic').source}[^>]*>([\\s\\S]*?)<\\/div>`)) || [])[0];
+      assert.ok(ico, `第 ${i + 1} 卡「${c.title}」里没有 .f-ic`);
+      const tint = (((ico.match(/class="([^"]*)"/) || [])[1] || '')
+        .trim().split(/\s+/).filter((t) => t !== 'f-ic')[0]) || '';
+      assert.ok(/^ic-[\w-]+$/.test(tint),
+        `第 ${i + 1} 卡「${c.title}」的 .f-ic 里没有 ic-* 色底 token（属性值现取，现 "${tint}"）`);
+      const svg = normWs(((ico.match(/<svg[\s\S]*?<\/svg>/) || [''])[0]));
       assert.ok(svg, `第 ${i + 1} 卡「${c.title}」的 .f-ic 里没有 <svg>`);
       const want = byTitle.get(c.title);
       assert.ok(want, `原型里没有标题为「${c.title}」的功能卡——判据靠标题配对，图标对应关系需重新确认`);
-      assert.deepEqual([m[1], svg], want,
-        `第 ${i + 1} 卡「${c.title}」的图标不是原型**同一张卡**的色底+图形逐字转录（原型 ${want[0]}，产物 ${m[1]}）：图标被重画、改写、配错色底或与别卡整对互换`);
+      assert.deepEqual([tint, svg], want,
+        `第 ${i + 1} 卡「${c.title}」的图标不是原型**同一张卡**的色底+图形逐字转录（原型 ${want[0]}，产物 ${tint}）：图标被重画、改写、配错色底或与别卡整对互换`);
     });
   });
 
@@ -479,7 +501,7 @@ test('S6-4 渲染门：四张真截图的 src / alt / 固有尺寸逐张现量�
   // 图文配对按**面板下标 ↔ segments 下标**对齐（评审 Minor 1）：整段 g.match 只证明「段 6 某处有这张图」，
   // 把两面板的 image+alt+尺寸整组对调时 alt / 尺寸 / 图注全都对得上、src 也全都能找到 → 49 条全绿，
   // 而点「事件中心」出的却是「仪表盘」的图。段 6 是全站唯一可能图文不符的地方，§6 诚实性不容它静默通过。
-  // 同时搜索范围也不再放到整页：dashboard.webp 被 Hero 共用（index.ejs:24），整页 s.match 会先命中
+  // 同时搜索范围也不再放到整页：dashboard.webp 被 Hero 共用（index.ejs 段 2 的 `<img class="shot">`），整页 s.match 会先命中
   // Hero 那枚 `<img class="shot" …>`，"速览段这张图写没写宽高"就成了替 Hero 背书（首轮 §5.1 / M11）。
   const panels = panelBlocks(g);
   assert.equal(panels.length, copy.gallery.segments.length, '面板数必须等于 segments.length，i↔i 配对无从对齐');
@@ -504,7 +526,10 @@ test('S6-4 渲染门：四张真截图的 src / alt / 固有尺寸逐张现量�
     assert.equal(width, w, `${tool} 实测 ${seg.image} 宽 ${w}，产物写 ${width}：错的宽高比本身就是 CLS`);
     assert.equal(height, h, `${tool} 实测 ${seg.image} 高 ${h}，产物写 ${height}：模板 DIMS 已与文件字节脱钩`);
   });
-  assert.doesNotMatch(s, /class="shot-side|class="mtbl|class="donut/, 'obsolete mockup DOM must be gone');
+  // 作废的迷你 mock DOM：按 class token 认（`class="mk-row shot-side"` 这种排在第二位的也要红）
+  for (const dead of ['shot-side', 'mtbl', 'donut']) {
+    assert.doesNotMatch(s, classVal(dead), `obsolete mockup DOM must be gone: ${dead}`);
+  }
 });
 
 test('T7 DOM 契约：.seg button[data-shot] ↔ .shot-panel[data-shot]（Task 10 的 JS 全靠这条）', () => {
@@ -530,7 +555,7 @@ test('T7 DOM 契约：.seg button[data-shot] ↔ .shot-panel[data-shot]（Task 1
   assert.equal(btns.filter((t) => attr(t, 'aria-selected') === 'true').length, 1, 'aria-selected="true" 必须恰好一枚');
   for (const t of btns) assert.match(t, /role="tab"/, '切换按钮必须是 role="tab"（分段控件的 ARIA 形态）');
   assert.match(segTag[0], /role="tablist"/, '.seg 容器必须是 role="tablist"');
-  // 控制者裁定 2：`.io.in{opacity:1}`（main.css:213）是 T10 的运行契约，模板预置 `in` 会让
+  // 控制者裁定 2：`.io.in{opacity:1}`（main.css 同名规则）是 T10 的运行契约，模板预置 `in` 会让
   // 速览的淡入永远不触发，还会把 T10 的入场 bug 掩成"看起来正常"。这里只许 io，一条都不许多。
   const ioChk = (tag, wantIo) => {
     const toks = cls(tag);
@@ -582,7 +607,7 @@ test('T7 模板门：段 6 由 C.gallery.segments 迭代出，DIMS 键集与 cop
   // 控制者裁定 7：`<%- url_for() %>` 是未转义输出，T11 要扫的就是这份清单；此处一律 `<%= %>`，
   // 这些路径不含 HTML 特殊字符，产物逐字节相同（已核），只是不再往清单里添条目。
   assert.doesNotMatch(sec, /<%-\s*url_for/, '段 6 的 url_for 必须走 <%= %> 转义形态');
-  assert.doesNotMatch(sec, /class="shot-frame io in"/, '模板不得再出现 io in 形态');
+  assert.doesNotMatch(sec, classVal('shot-frame', 'io', 'in'), '模板不得再出现 io in 形态（token 次序任意）');
 });
 
 // 评审 Important 1：门要判的是**属性级唯一来源**，不是 `.shot-frame{` 的出现次数。
@@ -722,7 +747,7 @@ test('S6-3 全页禁区：任何代码块里都没有可执行的 docker 命令�
     `全页 <pre> 只有 ${blocks.length} 块，少于 steps.length=${copy.quickstart.steps.length}：禁令无从落地`);
   blocks.forEach((pre, i) => assert.doesNotMatch(pre, /docker run|docker-compose|docker compose/,
     `第 ${i + 1} 个代码块写了可执行命令：§6 诚实性 ③ 的当前禁区，且这条跑不通`));
-  // 裁定 9：整页禁令只到这两句宣传语——copy.yml:229 的 FAQ 散文「一条 `docker run` 拉起的形态仍在
+  // 裁定 9：整页禁令只到这两句宣传语——copy.yml `faq.items` 里「部署复杂吗？」的散文「一条 `docker run` 拉起的形态仍在
   // 开发中」是**说实话**而不是命令，扩大 ban 范围等于回头改内容层。
   assert.doesNotMatch(s, /开箱即用|一键拉起/, '§6 禁止表述进了产物');
 });
@@ -756,7 +781,7 @@ test('S6-3 段 7 结构：暗极光段 + .qs-grid 里四步 + dev 徽章的 Dock
   const sec = classTags(q, 'dark-sec', 'section')[0];
   assert.ok(sec, '段 7 必须在 .dark-sec 上（设计方案 §2.1 段 7 = 暗极光）');
   assert.ok(cls(sec).includes('sec'), '段 7 的开标签丢了 .sec（72px 上下留白）');
-  // 裁定 3：.qs-grid 是版式承重墙——.qs-grid{repeat(3,1fr)}（main.css:153）、.qs-full{grid-column:1/-1}
+  // 裁定 3：.qs-grid 是版式承重墙——main.css 的 `.qs-grid{…grid-template-columns:repeat(3,1fr)…}`、`.qs-full{grid-column:1 / -1}`
   // （:170）、≤900px 塌单列（:229）全挂在它身上；漏了容器则四步全宽竖排，而 tokens.test.mjs:108
   // 只断 CSS 里有 .qs-grid 这条规则，救不回 DOM。
   assert.equal(classTags(q, 'qs-grid').length, 1, '段 7 的卡必须包在唯一的 .qs-grid 里');
@@ -830,7 +855,7 @@ test('S6-3 段 7 结构：暗极光段 + .qs-grid 里四步 + dev 徽章的 Dock
   // 防止循环因某类元素缺失而空转（"absent 读作 pass" 的温床）。
   assert.equal(classTags(q, 'qs-env').length, 1, '段 7 必须恰好一个 .qs-env（环境要求行）');
   assert.equal(classTags(q, 'sec-head').length, 1, '段 7 必须恰好一个 .sec-head（标题区）');
-  // 入场锁：与 T7 同源——只许 io，`in` 由 T10 的 IntersectionObserver 加（main.css:213）
+  // 入场锁：与 T7 同源——只许 io，`in` 由 T10 的 IntersectionObserver 加（main.css 的 `.io.in{opacity:1}`）
   for (const t of [...classTags(q, 'qs-card'), ...classTags(q, 'qs-env'), ...classTags(q, 'sec-head')])
     assert.ok(cls(t).includes('io') && !cls(t).includes('in'), `${t[1]}：段 7 的 io/in 与约定不一致`);
 });
@@ -855,7 +880,8 @@ test('T8 逐行数据门：每步代码块与 copy.quickstart.steps[].code 逐�
     // False-red：合法的 bash 续行（原型 :720-721 的 `docker run … \` + 两空格缩进 `-e DATABASE_URL=…`）
     // 会让此断言误红，而 deepEqual 因 copy 同源照样绿。保留换行计数（更清晰的诊断）。
   }
-  // clone 行的唯一来源是占位符（Task 2 的单一来源；copy.yml:168 的注释授权的正是这一处拼装）
+  // clone 行的唯一来源是占位符（Task 2 的单一来源；copy.yml `quickstart.steps` 上那条
+  // 「clone 命令由模板从 placeholders.github_url 拼装」的注释授权的正是这一处拼装）
   const first = preLines(preById(s, 'qs-code-1'))[0];
   assert.equal(first, `git clone ${copy.placeholders.github_url}.git`,
     'step 1 首行不是由 placeholders.github_url 现拼的 clone 命令');
@@ -873,7 +899,7 @@ test('T8 两色代码：# 开头的注释行走 .cmt、命令行走 .cmd，一�
     for (const g of spanPerLine(preById(s, `qs-code-${st.no}`), st.no)) {
       const wantCls = /^\s*#/.test(g.text) ? 'cmt' : 'cmd';
       assert.deepEqual(g.cls, [wantCls],
-        `「${g.text.slice(0, 40)}」分到了 ${g.cls.join(' ')}，应为 ${wantCls}（main.css:168-169 的两色分工）`);
+        `「${g.text.slice(0, 40)}」分到了 ${g.cls.join(' ')}，应为 ${wantCls}（main.css 的 .code .cmd / .code .cmt 两色分工）`);
       seen[wantCls]++;
     }
   }
@@ -897,7 +923,7 @@ test('T8 DOM 契约：每块 pre 配一枚 .copy-btn[data-copy]，data-label-don
     assert.equal(/aria-label="([^"]*)"/.exec(m[0])[1], copy.quickstart.copy_hint,
       'copy_hint 在原型语言里是无障碍说明，必须挂 aria-label 而不是可见文字');
     assert.equal(unesc(m[2].trim()), copy.labels.copy_button, '按钮可见文案只能是 labels.copy_button');
-    // Fix round 1 Minor 5：type="button" 钉死。index.ejs:160 保留此属性是为了防止 T10 脚本把按钮塞进
+    // Fix round 1 Minor 5：type="button" 钉死。index.ejs 段 7 的复制按钮保留此属性是为了防止 T10 脚本把按钮塞进
     // <form> 时变成 submit（brief Step 3 的 DOM 契约）；无测试钉住则 rationale 不可持久。
     assert.match(m[0], /\btype="button"/, '复制按钮必须 type="button"（防止被 form 包时变 submit）');
   }
@@ -916,7 +942,8 @@ test('T8 模板门：段 7 由 C.quickstart.steps 迭代出，index.ejs 里不�
     '<pre> 的 id 只许模板里出现一次（出现四次说明有块不再跟着 steps[] 走）');
   for (const lit of ['manage.py', 'uv venv', 'celery -A', 'uv pip install'])
     assert.ok(!sec.includes(lit), `模板里写死了「${lit}」：命令文本的唯一来源是 copy.quickstart.steps[].code`);
-  // 唯一允许的字面命令前缀 = clone 行，且必须与占位符拼在一起（copy.yml:168 的注释授权的正是这一处）
+  // 唯一允许的字面命令前缀 = clone 行，且必须与占位符拼在一起（copy.yml `quickstart.steps` 上
+  // 「clone 命令由模板从 placeholders.github_url 拼装」那条注释授权的正是这一处）
   assert.equal([...sec.matchAll(/git clone/g)].length, 1, 'git clone 字面量在段 7 模板只许出现在拼装那一处');
   assert.match(sec, /git clone[^<]*\$\{C\.placeholders\.github_url\}/,
     'step 1 首行必须是 `git clone ${C.placeholders.github_url}.git`：URL 只有一个来源（Task 2）');
@@ -934,11 +961,26 @@ test('T8 CSS 门：h3 内联徽章的对齐只有一条来源，且空转声明 
   assert.ok(marker > 0, '找不到增补段标记，转录区与追加区失去边界');
   assert.ok(!css.slice(0, marker).includes('.qs-card h3 .pill'),
     '.qs-card h3 .pill 是本站新结构（原型的 .qs-card 里没有徽章），只许出现在增补段');
-  const mine = appendixRules(css.slice(marker)).filter((r) => !r.media
-    && r.selectors.includes('.qs-card h3 .pill'));
-  assert.equal(mine.length, 1,
-    `.qs-card h3 .pill 的顶层规则必须恰好一条（现在 ${mine.length} 条）：对齐决定只能有一个来源；`
+  // 选择器命中判定按**末段复合选择器**算，不按「选择器字符串里有没有 .pill 字样」算：
+  // T8 评审 Minor 5/6 的两个变异都能绕过旧写法——
+  // ① `.dark-sec .pill{vertical-align:baseline}` 与 `.qs-card h3 .pill` 字符串不等，旧写法数出来仍是 1 条，
+  //    于是实测 4.00px 的下沉被悄悄改回来；
+  // ② `.qs-card h3 span{position:static}` 不含 .pill 字样，却照样命中徽章（徽章就是 <span>），
+  //    绕过 M14 那条本应抓它的死声明禁令。
+  const lastCompound = (sel) => (sel.trim().split(/[\s>+~]+/).pop() || '').trim();
+  const onPill = (r) => r.selectors.some((x) => {
+    const c = lastCompound(x);
+    return /\.(pill|badge)(?![\w-])/.test(c) || /^(span|\*)(?![\w-])/.test(c);
+  });
+  const tail = appendixRules(css.slice(marker));
+  const alignSrc = tail.filter((r) => !r.media && onPill(r) && declares(r, 'vertical-align'));
+  assert.equal(alignSrc.length, 1,
+    `.pill 的 vertical-align 顶层来源必须恰好一条（现在 ${alignSrc.length} 条：`
+    + `${alignSrc.map((r) => r.selectors.join(',')).join(' | ')}）：对齐决定只能有一个来源；`
     + '按视口改值请写进 @media——媒体查询里的覆写本门允许（T11 的领地）');
+  assert.deepEqual(alignSrc[0].selectors, ['.qs-card h3 .pill'],
+    '那条唯一来源必须是 `.qs-card h3 .pill`（换选择器另起一条同样是第二个来源）');
+  const mine = alignSrc;
   const decls = mine[0].decls.replace(/\s/g, '');
   for (const d of ['margin-left:var(--space-2)', 'vertical-align:middle'])
     assert.ok(decls.includes(d), `段 7 的徽章对齐丢了 ${d}（现 "${mine[0].decls.trim()}"）：`
@@ -946,9 +988,8 @@ test('T8 CSS 门：h3 内联徽章的对齐只有一条来源，且空转声明 
   // 死声明：全站唯一给徽章绝对定位的规则是 main.css 增补段的 `.feat-card>.pill.badge` 那条，它在 .qs-card 里
   // 命不中——实测注入 `position:static` 后 h3 与徽章的 rect 逐值不变（task-8-report.md 对照 C 组）。
   // 只禁 static 这一种值：`.feat-card>.pill.badge` 自己的 position:absolute 是 T5 的活规则，不算空转。
-  const dead = appendixRules(css.slice(marker))
-    .filter((r) => /\.pill|\.badge/.test(r.selectors.join(','))
-      && r.decls.replace(/\s/g, '').includes('position:static'));
+  const dead = tail
+    .filter((r) => onPill(r) && r.decls.replace(/\s/g, '').includes('position:static'));
   assert.equal(dead.length, 0,
     '增补段给 pill/badge 写了 position:static——本页没有任何规则把它们定位过，这是空转声明：'
     + dead.map((r) => r.selectors.join(',')).join(' | '));
@@ -1102,7 +1143,11 @@ test('S2-1 banner dismiss is session-only, labelled, and never localStorage', ()
   // 用 `/<button[^>]*>/` 切模板会把标签切在 EJS 中间（data-dismiss-alpha 落在切片外 → 假红）。
   // 产物里是真 HTML，浏览器看到的形态与判据读到的形态同源。
   const s = html('index.html');
-  const slice = s.slice(s.indexOf('class="alpha"'), s.indexOf('<header class="nav"'));
+  const alphaAt = s.search(classVal('alpha'));
+  const navAt = s.search(tagWith('header', 'nav'));
+  assert.ok(alphaAt >= 0 && navAt > alphaAt,
+    '切片标记缺失：产物里 .alpha 必须在 <header class="nav"> 之前（按 class token 与 tag 形状认）');
+  const slice = s.slice(alphaAt, navAt);
   const tags = [...slice.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
   assert.equal(tags.length, 1, '产物 .alpha 里必须恰好一枚按钮');
   assert.match(tags[0], /\btype="button"/,
@@ -1110,7 +1155,7 @@ test('S2-1 banner dismiss is session-only, labelled, and never localStorage', ()
   assert.match(tags[0], /\bdata-dismiss-alpha\b/, '脚本认的钩子是 data-dismiss-alpha，且必须在按钮上');
   assert.match(tags[0], new RegExp(`aria-label="${esc(copy.labels.close_banner)}"`),
     '产物里按钮的 aria-label 必须逐字等于 copy.labels.close_banner');
-  assert.match(slice, /class="alpha-text"/, '横幅文字必须由 .alpha-text 承载（flex 子项，换行才归 .alpha-body 管）');
+  assert.match(slice, classVal('alpha-text'), '横幅文字必须由 .alpha-text 承载（flex 子项，换行才归 .alpha-body 管）');
 });
 
 test('T10 CSS 门：.alpha 留白仍只有一条来源，flex 覆写排在它之后，[hidden] 真能收起来', () => {

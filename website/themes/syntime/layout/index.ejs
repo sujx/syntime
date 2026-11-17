@@ -92,7 +92,7 @@
     否则判据按文件字节现量即红（honesty.test.mjs 的 T7 三条）。图片在此只出现一次（<img> 模板化），
     按钮与面板两轮迭代都派生自 segments[]，data-shot 用序号——copy.gallery.segments 没有 id 键，
     序号就是 T10 认的配对键。
-    io 不带 in：`.io.in{opacity:1}`（main.css:213）是 T10 运行时的解锁态，预置 in 等于取消淡入。
+    io 不带 in：main.css 的 `.io.in{opacity:1}` 是 T10 运行时的解锁态，预置 in 等于取消淡入。
     T10 必验：面板先解除 hidden 才谈得上 .shot-frame/.shot-cap 的 in（hidden 期间不参与布局、IO 不命中），须实测一次真实点击后无注入的可见性。
     非当前按钮不写 class=""、非当前面板把 hidden 拼在属性串尾部：原型 :505-508 的 inactive 按钮
     本来就没有 class 属性，产物也不留空属性与 `data-shot="0" >` 这种尾随空格。 %>
@@ -132,11 +132,12 @@
     一张带 dev 徽章的预告卡（badge 走 partial，档位仍从 copy 派生，模板不写 pill、不写档位）。
     空白纪律：<pre> 在模板里顶格，块内内容只由「一行一个 span」拼出，行间用换行表达式隔开——
     pre 里的空白全部可见，顺手把这一行缩进进 .code 就等于给每条命令加了前导空格。
-    分色按**整行**判（.cmt = 以 # 开头，其余 .cmd，main.css:167-169 与原型 :718-721 同构）：
+    分色按**整行**判（.cmt = 以 # 开头，其余 .cmd，main.css 的 `.code .cmd` / `.code .cmt` 两条与原型 :718-721 同构）：
     命令行尾随的注释（第 3 步的 seed_demo 那行）因此仍是命令蓝，这是原型的既有限制，不做 token 级切分。
     代码文本一律走转义输出标签，故 <自行生成> 在产物里是 &lt; 形态——honesty.test.mjs 的凭据判据与
     占位符判据读的都是这份形态（改在未转义输出上，两条判据同时红）。
-    step 1 首行的 clone 由 placeholders.github_url 现拼（copy.yml:168 的注释授权的正是这一处），
+    step 1 首行的 clone 由 placeholders.github_url 现拼（授权的正是 copy.quickstart.steps[0] 上那条
+    「clone 命令由模板从 placeholders.github_url 拼装」的注释本身，不是它的行号），
     其余每一行都来自 copy.quickstart.steps[].code：模板里不写任何命令文本。 %>
 <section id="quickstart" class="sec dark-sec">
   <div class="wrap">
@@ -193,7 +194,7 @@
         </div>
       </div>
       <div class="io">
-        <h3 class="stack-t">技术栈</h3>
+        <h3 class="stack-t"><%= C.positioning.stack_label %></h3>
         <div class="chips">
           <% C.positioning.stack.forEach(function(t){ %><span class="chip"><%= t %></span><% }) %>
         </div>

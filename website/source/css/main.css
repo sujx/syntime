@@ -341,5 +341,8 @@ section{scroll-margin-top:96px}
 .post-body h2{font-size:20px;font-weight:600;color:var(--gray-900);margin:var(--space-8) 0 var(--space-3)}
 .post-body p,.post-body li{font-size:15px;line-height:1.85;color:var(--gray-700)}
 .post-body ul{padding-left:var(--space-5);display:grid;gap:var(--space-2)}
-.post-body code{background:var(--primary-50);color:var(--primary-700);padding:1px 5px;border-radius:4px;font-family:var(--font-mono);font-size:13px}
+/* T12 Minor 3（T13 结转）：原先这里的 `.post-body code{…border-radius:4px…}` 已删——
+   首篇公告渲染出来 0 个 <code>（实测 public/2026-11-16/syntime-alpha/index.html），是无消费者的死声明，
+   而且那个 4px 圆角不是 Token（约束 7）。将来公告真用到行内代码时再补，补的前提是同时给出 Token 取值
+   （--radius-sm:6px 是唯一比它更接近的既有档）。 */
 .post-back{margin-top:var(--space-10);font-size:13px}
