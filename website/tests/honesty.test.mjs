@@ -587,8 +587,13 @@ test('T7 模板门：段 6 由 C.gallery.segments 迭代出，DIMS 键集与 cop
 // 分堆走花括号深度（同 media900Blocks 的思路），扫描前先剥注释：本段注释里就原样写着
 // `.shot-frame{background:#fff}`（main.css:275），不剥就是拿注释顶替真规则。
 // media900Blocks 自己的那一行修仍按台账 R27(a) 归 T11，本门不越界替它改。
+// 分堆器要求 src 从一条**规则**起头；但调用方传的是 css.slice(marker)，marker 落在注释内部
+// （`/* ============ V1.1–V1.3 增补结构 … ============ */`），切片因此自带一个没有开口的 `*/`。
+// 不归一化掉它，增补段的**第一条**规则就会以「…§2.1） ============ */\n\n.alpha」这种畸形选择器出现
+// —— T10 CSS 门就是第一个踩到的（它按选择器精确比对页面级 `.alpha`；T7/T8 那两道门的目标规则不是第一条，
+// 所以一直没暴露）。剥掉悬空尾注对合法输入是空操作：真规则的 prelude 里不含 `*/`。
 function appendixRules(src) {
-  const text = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  const text = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[^{}]*\*\//, '');
   const out = [];
   const walk = (chunk, media) => {
     for (let i = 0; i < chunk.length;) {
@@ -934,7 +939,7 @@ test('T8 CSS 门：h3 内联徽章的对齐只有一条来源，且空转声明 
   for (const d of ['margin-left:var(--space-2)', 'vertical-align:middle'])
     assert.ok(decls.includes(d), `段 7 的徽章对齐丢了 ${d}（现 "${mine[0].decls.trim()}"）：`
       + '实测 24px 的 inline-flex pill 挂在 16px h3 基线上会下沉 4px');
-  // 死声明：全站唯一给徽章绝对定位的规则是 `.feat-card>.pill.badge`（main.css:250），它在 .qs-card 里
+  // 死声明：全站唯一给徽章绝对定位的规则是 main.css 增补段的 `.feat-card>.pill.badge` 那条，它在 .qs-card 里
   // 命不中——实测注入 `position:static` 后 h3 与徽章的 rect 逐值不变（task-8-report.md 对照 C 组）。
   // 只禁 static 这一种值：`.feat-card>.pill.badge` 自己的 position:absolute 是 T5 的活规则，不算空转。
   const dead = appendixRules(css.slice(marker))
@@ -1056,7 +1061,7 @@ const jsCodeOnly = () => readFileSync(new URL('../source/js/main.js', import.met
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
 test('S2-1 banner dismiss is session-only, labelled, and never localStorage', () => {
-  // 先剥 `<%# %>`（:240 的 T5 模板门同族纪律）：横幅的说明注释里若举例写 `aria-label="关闭提示"`，
+  // 先剥 `<%# %>`（本文件 S6-1 模板门的同族纪律）：横幅的说明注释里若举例写 `aria-label="关闭提示"`，
   // 不该把「模板不硬写中文」这条判据判红。
   const nav = readFileSync(new URL('../themes/syntime/layout/partial/nav.ejs', import.meta.url), 'utf8')
     .replace(/<%#[\s\S]*?%>/g, '');
@@ -1066,6 +1071,16 @@ test('S2-1 banner dismiss is session-only, labelled, and never localStorage', ()
   assert.ok(copy.labels.close_banner, 'close_banner must come from copy.yml');
   assert.match(js, /sessionStorage/);
   assert.doesNotMatch(js, /localStorage/);
+  // F2（审查 Important 2）：设计方案 §2 段 1 与 Global Constraint 6 点名的就是**这个键、这个值**，
+  // 而上一行只钉了「有没有 sessionStorage」。grep 全仓（tests/ + themes/ + source/）证明
+  // `syntime.alpha.dismissed` 只出现在 main.js，所以把键改成 syntime.banner.off、或把值从 '1' 改成 'true'，
+  // 原来的 70 条门全绿而契约已断（T12 的 /updates/ 页将来读同一个键）。
+  // 与 M9 / M21 修过的「membership 弱于 key-pinned」同族：读写各钉一条逐字的键名 + 值。
+  const ALPHA_KEY = String.raw`syntime\.alpha\.dismissed`;
+  assert.match(js, new RegExp(`sessionStorage\\.getItem\\(\\s*['"]${ALPHA_KEY}['"]\\s*\\)\\s*===\\s*['"]1['"]`),
+    "读必须逐字钉住 sessionStorage.getItem('syntime.alpha.dismissed') === '1'：键名与值都是设计方案 §2 段 1 的契约");
+  assert.match(js, new RegExp(`sessionStorage\\.setItem\\(\\s*['"]${ALPHA_KEY}['"]\\s*,\\s*['"]1['"]\\s*\\)`),
+    "写必须逐字钉住 sessionStorage.setItem('syntime.alpha.dismissed', '1')：改名或把值写成 'true' 就把 T12 /updates/ 的读取契约断了");
   // 中文单一来源（§3）：关闭按钮的可访问名只能来自 labels，模板不写第二个来源
   assert.equal(typeof copy.labels.close_banner, 'string');
   assert.ok(copy.labels.close_banner.trim().length >= 2, 'close_banner 得是能念的短语，不是空串');
@@ -1096,33 +1111,59 @@ test('S2-1 banner dismiss is session-only, labelled, and never localStorage', ()
 
 test('T10 CSS 门：.alpha 留白仍只有一条来源，flex 覆写排在它之后，[hidden] 真能收起来', () => {
   const css = readCss();
-  // 先剥注释再扫（:78 与 appendixRules:591 的同族纪律）：本文件 :239-243 的理由注释里
-  // 就原样写着 `.nav{top:12px}`、`.alpha` 这类片段，不剥就是拿注释顶替真规则。
-  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  // 只取**页面级** .alpha 规则：`.alpha .pill`（后代）与 `.alpha-x`（连字符）都不算，
-  // 所以 `\.alpha` 后面只允许 `[attr]` 或 `{`。
-  const rules = [...bare.matchAll(/(^|[^-\w.])\.alpha(\[[^\]]*\])?\{([^}]*)\}/g)]
-    .map((m) => ({ sel: `.alpha${m[2] || ''}`, decls: m[3] }));
+  // F6（审查 Minor 6）：本门原版是一条正则扫**剥注释后的全文**，不区分顶层规则与 @media 里的规则 ——
+  // T11 加一条合法的 `@media (max-width:640px){.alpha{padding-top:…}}` 就会被下面「后加的不许 declare padding」
+  // 判红，而我们正要把响应式交给 T11。姊妹门 T7（本文件 'T7 CSS 门…' 那条）早就用 appendixRules() 分堆
+  // 再 .filter((r) => !r.media)：@media 覆写是「T11 的领地」。改用同一个 helper，豁免自动来，两道门不再各说各话。
+  // 剥注释也在 helper 里做（本文件 §6-5 那条门 `const bare = …` 的同族纪律）：main.css 增补段的理由注释里
+  // 原样写着 `.alpha[hidden]{display:none}` 与 `.nav{top:12px}`，不剥就是拿注释顶替真规则。
+  const marker = css.indexOf('V1.1–V1.3 增补结构');
+  assert.ok(marker > 0, '找不到增补段标记，转录区与追加区失去边界');
+  // 页面级 .alpha = 逗号选择器列表里有一项**正好是** `.alpha` 或 `.alpha[属性]`：
+  // `.alpha .pill`（后代）、`.alpha-x` / `.alpha-x:hover` / `.alpha-body`（连字符与派生类）都不算。
+  // 比旧正则强一格：旧写法要求 `.alpha` 后面直接跟 `{`，所以 `.alpha,.x{padding:0}` 那种合并列表它看不见。
+  const isPageAlpha = (sel) => /^\.alpha(\[[^\]]*\])?$/.test(sel);
+  const rules = appendixRules(css.slice(marker)).filter((r) => !r.media && r.selectors.some(isPageAlpha));
+  const who = (r) => r.selectors.filter(isPageAlpha).join(',');
+  const has = (decls, prop) => new RegExp(`(?:^|[;\\s])${prop}\\s*:`, 'i').test(decls.replace(/\s+/g, ' '));
+  // 长写法与简写一起认（旧门只认 `padding:`，`padding-top:` 能从「后加的不许 declare」溜过去；本轮加严）。
+  const VARIANTS = { padding: ['padding', 'padding-top'], background: ['background', 'background-color'], color: ['color'] };
+  const declaresAny = (decls, group) => VARIANTS[group].some((p) => has(decls, p));
+  // 抽成函数是为了下面能拿**合成对照**跑同一条判据，而不只是拿真产物跑一次
+  const offenders = (rs) => rs.slice(1)
+    .flatMap((r) => Object.keys(VARIANTS).filter((g) => declaresAny(r.decls, g)).map((g) => `${who(r)} 的 ${g}`));
   assert.ok(rules.length >= 2,
     `页面级 .alpha 规则至少两条（T4 的留白 + T10 的 flex 覆写），现在 ${rules.length} 条`);
-  const has = (decls, prop) => new RegExp(`(?:^|[;\\s])${prop}\\s*:`, 'i').test(decls.replace(/\s+/g, ' '));
-  assert.equal(rules[0].sel, '.alpha', '第一条页面级 .alpha 必须是无属性选择器的那条');
-  assert.ok(has(rules[0].decls, 'padding') || has(rules[0].decls, 'padding-top'),
-    '第一条 .alpha 必须带顶部留白：:82 的首屏几何判据读的就是**第一条** `.alpha{…}`，'
-    + '把带留白的那条挤到后面 = 几何判据改读一条没有 padding 的规则，当场红');
-  for (const r of rules.slice(1)) {
-    for (const p of ['padding', 'background', 'color']) {
-      assert.ok(!has(r.decls, p),
-        `后加的 ${r.sel} 又 declare 了 ${p}：留白 / 底色 / 文字色只能有 :244 那一个来源`
-        + '（§6-5 的几何判据与 T4 的视觉基准都挂在它身上）');
-    }
-  }
-  assert.ok(rules.some((r) => r.sel === '.alpha' && /display\s*:\s*flex/.test(r.decls)),
+  assert.ok(rules[0].selectors.includes('.alpha'),
+    '第一条页面级 .alpha 必须含裸 `.alpha` 选择器（不带 [attr] 的那条）——选择器比对失配就是分堆器又漂了');
+  assert.ok(declaresAny(rules[0].decls, 'padding'),
+    '第一条 .alpha 必须带顶部留白：§6-5 的首屏几何判据（本文件的 "first-screen clearance" 那条门）'
+    + '读的就是它找到的**第一条** `.alpha{…}`，把带留白的那条挤到后面 = 几何判据改读一条没有 padding 的规则，当场红');
+  assert.equal(offenders(rules).length, 0,
+    `后加的页面级 .alpha 又 declare 了留白 / 底色 / 文字色（违例：${offenders(rules).join(' | ')}）：`
+    + '这三样只能有 main.css 增补段第一条带 padding 的 `.alpha{…}` 一个来源（§6-5 的几何判据与 T4 的视觉基准都挂在它身上）');
+  assert.ok(rules.some((r) => r.selectors.includes('.alpha') && /display\s*:\s*flex/.test(r.decls)),
     '缺 .alpha{display:flex}：文字块与关闭按钮排不进同一行（§2 段 1 的「右侧可关」）');
   // 这条是**实测**加进来的，不是风格洁癖：author 级的 display:flex 会盖掉 UA 的 [hidden]{display:none}
   // （author 原点在 cascade 里高于 UA，与特异性无关），于是 main.js 的 banner.hidden=true 画面上什么都不发生。
   // 取证见 task-10-report.md 的「不加这条规则」变异：CDP 实测横幅 rect 与 computed display 均不变。
-  assert.ok(rules.some((r) => r.sel === '.alpha[hidden]' && /display\s*:\s*none/.test(r.decls)),
+  assert.ok(rules.some((r) => r.selectors.includes('.alpha[hidden]') && /display\s*:\s*none/.test(r.decls)),
     '缺 .alpha[hidden]{display:none}：.alpha 一旦 display:flex，UA 的 [hidden] 就不再隐藏它 —— '
     + '点关闭按钮等于没反应（§2 段 1 的「可关」变哑，而静态判据全绿）');
+  // 分类器自检（T7 门末尾的同族纪律）：「@media 里的 .alpha 覆写算 T11 的领地、不判红」不能只靠上面那句注释承诺 ——
+  // 今天产物里还没有 .alpha 的媒体覆写，只靠变异实验证明就等于把这条留给 T11 去撞。
+  const synth = appendixRules('.alpha{padding-top:82px}.alpha[hidden]{display:none}'
+    + '@media (max-width:640px){.alpha{padding-top:96px;background:#0a0a0a;color:#fff}}');
+  const stop = synth.filter((r) => !r.media && r.selectors.some(isPageAlpha));
+  const smed = synth.filter((r) => r.media && r.selectors.some(isPageAlpha));
+  assert.equal(stop.length, 2,
+    `分堆器把 @media 里的 .alpha 算进了顶层来源（现在 ${stop.map(who).join(' | ')}）：T11 加响应式留白就是假红`);
+  assert.equal(smed.length, 1, '分堆器没把 @media 里的 .alpha 认成媒体覆写：两堆混一起，「唯一来源」就无从判');
+  assert.ok(declaresAny(smed[0].decls, 'padding'), '合成对照失配：@media 那条没带 padding，本自检就成了空转');
+  assert.equal(offenders(stop).length, 0,
+    '顶层页面级 .alpha 的「后加的不许 declare」判据把 @media 覆写也算进去了 —— @media 是 T11 的领地');
+  // 切片起点的悬空 `*/`（marker 落在注释内部）必须被归一化掉，否则增补段第一条规则的选择器比对直接落空
+  assert.equal(appendixRules('V1.1–V1.3 增补结构（设计方案 §0-6 / §2.1） ============ */ .alpha{padding-top:82px}')
+    [0].selectors[0], '.alpha',
+    'appendixRules 没剥掉切片起点的悬空 */：增补段第一条规则会以畸形选择器出现，页面级 .alpha 就找不到来源了');
 });

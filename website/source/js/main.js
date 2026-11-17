@@ -59,7 +59,8 @@
       if (!pre) return;
       var text = pre.innerText;
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(text).then(function () { done(btn); });
+        navigator.clipboard.writeText(text).then(function () { done(btn); })
+          .catch(function () { /* 失败静默的实现，不是吞错：复制没成就不改文案、不报完成，也不留未捕获拒绝 */ });
       } else {
         var ta = document.createElement('textarea');
         ta.value = text;

@@ -247,11 +247,11 @@ section{scroll-margin-top:96px}
 .alpha .pill{margin-left:var(--space-2);vertical-align:middle}
 /* T10 §2 段 1「右侧可关」：横幅排成「文字块 + 关闭按钮」一行（.alpha-x 只用 --primary-*，印章红禁入 §0-4）。
    三条纪律：① 本块必须排在 :244 那条**之后**，且刻意不写 padding / background / color —— 留白、底色、
-   文字色只许有 :244 一个来源，§6-5 的首屏几何判据（honesty.test.mjs:82）读的就是它找到的**第一条**
+   文字色只许有 :244 一个来源，§6-5 的首屏几何判据（honesty.test.mjs 的 "first-screen clearance" 门）读的是它找到的**第一条**
    `.alpha{…}`，把带留白的那条挤到后面等于让几何判据去量一条没有 padding 的规则（判据本身由 T10 CSS 门钉住）。
    ② brief 里的 position:relative 未加：本页没有任何 .alpha 后代需要绝对定位，实测加与不加
    `.alpha` / `.alpha-body` / `.alpha-text` / `.pill` / `.alpha-x` 五个 rect 逐值不变（task-10-report.md），
-   按本文件 `.shot-frame img{max-height:none}`（:277）与 T8 的 position:static 先例，空转声明不 ship。
+   按本文件「`.shot-frame img{max-height:none}` 未加」那条与 T8 的 position:static 先例，空转声明不 ship。
    ③ `.alpha[hidden]{display:none}` 是**必须**的：author 级 display:flex 在 cascade 里赢过 UA 的
    [hidden]{display:none}（原点优先于特异性），少了它 main.js 的 banner.hidden=true 画面上什么都不发生 ——
    实测见报告的变异条「删掉这条规则后关闭按钮点不动」。 */
@@ -301,7 +301,7 @@ section{scroll-margin-top:96px}
    取 `.alpha .pill`（:247，同一件「文字 + 徽章」的事）那两条声明：vertical-align:middle 把下沉收到
    2.66px、行盒回到 26.66px；margin-left:var(--space-2) 把「标题→徽章」的可视间距从 3.63px（只剩一个
    折叠空格）抬到 11.63px。
-   brief 的 position:static **不加**：全站唯一给徽章绝对定位的规则是 `.feat-card>.pill.badge`（:250），
+   brief 的 position:static **不加**：全站唯一给徽章绝对定位的规则是增补段的 `.feat-card>.pill.badge` 那条，
    它在 `.qs-card` 里命不中——实测该徽章的 computed position 本来就是 static，单独注入
    `.dark-sec .badge{position:static}` 后 h3 与徽章的 rect 逐值不变（对照 C 组）。按本文件
    `.shot-frame img{max-height:none}` 的先例，空转规则不 ship。

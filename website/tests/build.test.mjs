@@ -44,6 +44,36 @@ test('no unresolved EJS or undefined leakage', () => {
 const jsSrc = () => readFileSync(new URL('../source/js/main.js', import.meta.url), 'utf8');
 const jsCode = () => jsSrc().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
+// F4（审查 Minor 4）判据要用：把每个 `.catch(` 的**支路文本**按括号深度切出来。
+// 为什么不用一条正则了事：谎报有三型 `.catch(function () { done(btn); })`、`.catch(() => done(btn))`、
+// `.catch(done)`，前缀形态各异，而「支路里不许出现 done」只跟配对有关。切出来的支路只含圆括号以内的原文，
+// 注释已被 jsCode() 剥掉，所以注释里举例写 `.catch(() => done(btn))` 顶替不了判据（台账 R27(a) 同族）。
+const catchClauses = (code) => {
+  const out = [];
+  for (const m of code.matchAll(/\.catch\s*\(/g)) {
+    let depth = 1, i = m.index + m[0].length;
+    while (i < code.length && depth > 0) {
+      if (code[i] === '(') depth++;
+      else if (code[i] === ')') depth--;
+      i++;
+    }
+    assert.ok(depth === 0, '.catch 的圆括号没配上，支路无从切');
+    out.push(code.slice(m.index + m[0].length, i - 1));
+  }
+  return out;
+};
+
+// F5（审查 Minor 5）判据要用：分段控件那一段 = 从取容器到 done() 助手之前。
+// 按「段」而不是全文钉，是因为全文钉会被别的同名写法顶掉 —— 与 M9（`.in` 被 reduce 分支顶掉）、
+// M21（`hidden` 被横幅那行顶掉）同一类漏洞。右界取 done() 是脚本自己的结构约定（复制段在分段段之后）。
+const segSection = (code) => {
+  const s = code.search(/getElementById\(\s*['"]seg-shot['"]\s*\)/);
+  assert.ok(s >= 0, "分段控件必须由 document.getElementById('seg-shot') 取容器");
+  const e = code.indexOf('function done', s);
+  assert.ok(e > s, '取不到分段控件那一段的右界（done() 助手必须排在 seg 段之后）');
+  return code.slice(s, e);
+};
+
 test('main.js is within the 100-line budget and wired to the DOM contract', () => {
   const js = jsSrc();
   const code = jsCode();
@@ -71,7 +101,20 @@ test('main.js is within the 100-line budget and wired to the DOM contract', () =
   assert.match(code, /hidden\s*=\s*[^;\n]*data-shot/,
     '段 6 面板的显隐必须由「hidden 对 data-shot」这一句决定，换成 class 开关就不在 T7 的 DOM 契约上');
   assert.match(code, /pre\.innerText/,
-    '<pre> 的文本必须走 innerText：Task 8 出的是一行一个 <span>，textContent 会丢掉 <span> 之间的换行');
+    '<pre> 的文本走 innerText：与原型 :846 的取法一致，读的是**排版结果**。'
+    + '今天 Task 8 出的是一行一个 <span>，换行是 span 之间的字面文本节点，textContent 同样逐字符保留'
+    + '（实测 task-10-report-fix1.md F1：四个 qs-code-* 两两逐字节相同）；也**不是**因为 textContent '
+    + '现在会丢换行才钉的 —— 钉 innerText 钉的是它读**排版结果**：将来 <pre> 里出现 <br> 或块级子节点时'
+    + '它照样拿得到换行，实测同一结构 innerText 取到 "a\\nb\\nc"、textContent 取到 "abc"（行数差 2），'
+    + 'textContent 唯一的优势是保留源码里的原始空白，那是 Task 8 的写法而非本行的契约');
+  // F5（审查 Minor 5）：分段控件的**状态写**必须钉住。只钉「读属性」的话，删掉
+  // `x.setAttribute('aria-selected', on)` 那一行，index.ejs 段 6 服务端渲染的 aria-selected
+  // 在切 tab 之后就开始说谎，而原判据 70 条全绿（与 M9 / M21 同族：判读不判写）。
+  const seg = segSection(code);
+  assert.ok((seg.match(/classList\.toggle\(\s*['"]on['"]\s*,/g) || []).length >= 1,
+    "seg 段必须写 classList.toggle('on', <第二参>) 的双参形态：只 add 不减或单参 toggle 都不会把上一个选中项落回去，两个 tab 能同时亮");
+  assert.ok((seg.match(/setAttribute\(\s*['"]aria-selected['"]\s*,/g) || []).length >= 1,
+    "seg 段必须写 setAttribute('aria-selected', …)：role=tablist 的选中态是 T7 的 DOM 契约，不跟着面板一起改就是给 AT 说谎");
   assert.ok(!js.includes('://'),
     'main.js 里出现 :// —— 上面的行注释剥离器会把字符串里的 // 当注释起点、吞掉同行真代码（假通过）；'
     + '先把它换成真词法器再引 URL');
@@ -79,11 +122,17 @@ test('main.js is within the 100-line budget and wired to the DOM contract', () =
 
 test('T10 失败路径不谎报成功：复制失败不进 done，sessionStorage 抛错就留着横幅', () => {
   const code = jsCode();
-  // brief Step 3 的诚实纪律：execCommand 抛错 / clipboard 拒绝时**不进** done()。
-  // 两条各封一种写法（`.catch(() => done(btn))` 与 `catch (err) { done(btn) }`）；
-  // 今天脚本一个 .catch 都没有，将来若要挂一个吞错的 .catch，必须连本条一起改。
-  assert.doesNotMatch(code, /\.catch\s*\(/,
-    'clipboard 的失败支只许静默：挂 .catch 就是给「复制没成却报已复制」留门（brief Step 3 注 2）');
+  // brief Step 3 的诚实纪律：clipboard 拒绝 / execCommand 抛错时**不进** done()。
+  // F4（审查 Minor 4）把上一行的判据**收窄**：原版禁一切 `.catch(`，连唯一正确的修法一起禁了 ——
+  // writeText 会因权限或焦点丢失 reject，没有拒绝支路时浏览器往控制台打 Uncaught (in promise)
+  // DOMException，那既不是静默也不是谎报，是第三种噪声（RED 证据：加了空 .catch 的 main.js 被原版判红）。
+  // 收窄后的判据只禁说谎那一型：**支路里出现 done**。三条变异各证一型（function 体 / 箭头简写 / 直接传函数），
+  // 其中 `.catch(() => done(btn))` 只有本条抓得到，下一条 `catch…{ done( }` 的 `\{` 匹配不上它。
+  for (const clause of catchClauses(code)) {
+    assert.ok(!/\bdone\b/.test(clause),
+      '.catch 的支路里不许出现 done：复制没成却报已复制（brief Step 3 注 2）。现在这一支是 '
+      + JSON.stringify(clause.trim().slice(0, 120)));
+  }
   assert.doesNotMatch(code, /catch\s*\([^)]*\)\s*\{[^}]*\bdone\(/, 'catch 分支里不得调用 done()');
   // 隐私模式下 sessionStorage 会抛：读必须整段（含 banner.hidden=true）在 try 内，
   // 抛错的后果只能是「横幅还在」，而不是「横幅已关闭」。
