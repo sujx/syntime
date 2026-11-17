@@ -12,7 +12,7 @@
       </div>
       <div class="foot-col">
         <h4><%= C.footer.col_projects %></h4>
-        <% C.footer.links.forEach(function(l){ %><a href="<%- l.href.startsWith('http') ? l.href : url_for(l.href) %>"><%= l.text %></a><% }) %>
+        <% C.footer.links.forEach(function(l){ %><a href="<%= l.href.startsWith('http') ? l.href : url_for(l.href) %>"><%= l.text %></a><% }) %>
       </div>
     </div>
     <div class="foot-bottom">

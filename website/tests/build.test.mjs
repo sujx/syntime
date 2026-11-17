@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -426,19 +426,65 @@ test('T11 SEO 门：canonical 与 og:url 同推导、og:image 指向真实文件
     'public/images/og-image.png 不在——og:image 指向一个不存在的文件（抓取端表现为无图卡片）');
 });
 
-test('T11 模板转义门：url_for 的输出一律走 <%=%>，产物路径逐字节不变（brief Interfaces）', () => {
+test('T11 模板转义门：url_for 的输出一律走 <%=%>，产物路径逐字节不变（终审 I1 扩面）', () => {
   const s = html('index.html');
-  for (const f of ['../themes/syntime/layout/layout.ejs', '../themes/syntime/layout/partial/head.ejs',
-    '../themes/syntime/layout/page.ejs', '../themes/syntime/layout/post.ejs']) {
-    const src = readFileSync(new URL(f, import.meta.url), 'utf8');
-    assert.doesNotMatch(src, /<%-\s*url_for/,
-      `${f.split('/').pop()} 里有未转义的 url_for 输出（<%- 形态）：url_for 返回的是纯路径字符串，`
-      + '它不需要原始 HTML 权限，写成 <%- 就是给"路径里出现引号"留门');
+  // 终审 I1：这一门原先点名 4 个模板，把另外同样调用 url_for 的 index.ejs / partial/nav.ejs /
+  // partial/footer.ejs 整个留在门外——**手写清单本身就是病灶**（清单不会随新模板长）。
+  // 改成遍历 layout 下全部 .ejs，逐个取出 `<%- … %>` 原样输出标签，看它的表达式里有没有 url_for。
+  const dir = new URL('../themes/syntime/layout/', import.meta.url);
+  const templates = readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.ejs')).sort();
+  for (const must of ['index.ejs', 'partial/head.ejs', 'partial/nav.ejs', 'partial/footer.ejs']) {
+    assert.ok(templates.includes(must),
+      `模板遍历没拿到 ${must}：readdirSync 的 recursive 或过滤条件坏了，本门会在清单外静默空转`);
   }
+  const violations = [];
+  let legit = 0;
+  let escaped = 0;
+  for (const rel of templates) {
+    const src = readFileSync(new URL(rel, dir), 'utf8');
+    for (const tag of src.match(/<%-[\s\S]*?%>/g) || []) {
+      if (/\burl_for\b/.test(tag)) violations.push(`${rel}: ${tag.trim()}`);
+      // 合法的 `<%- partial(...) %>` / `<%- body %>` / `<%- page.content %>` 走这条计数
+      else legit += 1;
+    }
+    escaped += (src.match(/<%=[\s\S]*?\burl_for\b[\s\S]*?%>/g) || []).length;
+  }
+  assert.deepEqual(violations, [],
+    `未转义的 url_for 输出（<%- 形态）：${violations.join(' | ')}`
+    + ' —— url_for 返回的是纯路径字符串，它不需要原始 HTML 权限，写成 <%- 就是给"路径里出现引号"留门');
+  // 反向自检（同族于 T13 的"门不能检查空气"）：合法原样输出与转义形态都必须量得到，
+  // 两个 0 分别意味着正则失配 / 全站不再调用 url_for，那时上面那条 deepEqual 就是真空绿。
+  assert.ok(legit > 0, '一条合法 `<%- … %>`（partial / body / page.content）都没扫到：标签正则失效了');
+  assert.ok(escaped > 0, '一条 `<%= … url_for … %>` 都没扫到：转义形态本身不见了，本门无从谈起');
   // 转义形态改了，产物必须逐字节等价（改了输出却把路径改坏 = 当场可见的红）
   assert.match(s, /<link rel="stylesheet" href="\/css\/main\.css">/);
   assert.match(s, /<script src="\/js\/main\.js"><\/script>/);
   assert.match(s, /<meta property="og:image" content="https:\/\/syntime\.cn\/images\/og-image\.png">/);
+  // 终审 I1 新收口的四处：首页截图、定位条文档链、导航「更新日志」、页脚站内链——产物路径逐字节不变
+  assert.match(s, /<img class="shot" src="\/images\/gallery\/dashboard\.webp"/);
+  assert.match(s, /<a class="nav-log" href="\/updates\/">/);
+  assert.match(s, /<a href="\/docs\/adr\/">/);
+  assert.match(s, /<a href="\/docs\/">/);
+});
+
+test('终审 I2 无 JS 兜底门：<noscript> 里的 .io 覆写在样式表之后、</head> 之前', () => {
+  // main.css:212（转录区，约束 8 不许改）把 `.io` 写成 opacity:0，解锁只由 main.js 的
+  // IntersectionObserver 加 `.in` 完成——禁用 JS 时首页那 ~40 个 .io 就永久隐形，整页空白。
+  // 兜底只能加在模板侧：<head> 里一条 <noscript><style>，同特异度、排在样式表之后靠顺序取胜。
+  for (const p of ['index.html', 'updates/index.html', '2026-11-16/syntime-alpha/index.html']) {
+    const s = html(p);
+    const ns = s.match(/<noscript><style>\.io\{[^}]*\}<\/style><\/noscript>/);
+    assert.ok(ns, `${p} 的 <head> 里没有 .io 的无 JS 覆写——禁 JS 时本页整幅 opacity:0（终审 I2）`);
+    assert.match(ns[0], /opacity:\s*1/, `${p} 的兜底必须把 opacity 拉回 1，现在「${ns[0]}」`);
+    assert.match(ns[0], /transform:\s*none/, `${p} 的兜底还得清掉 translateY，现在「${ns[0]}」`);
+    assert.ok(s.indexOf('<noscript><style>') > s.indexOf('/css/main.css'),
+      '兜底必须排在 main.css 之后：同特异度的覆写靠顺序取胜，写在样式表前面等于没写');
+    assert.ok(s.indexOf('<noscript><style>') < s.indexOf('</head>'), '兜底必须在 <head> 内（<style> 属头部件）');
+  }
+  // 转录区不许被改（约束 8）：兜底走 <noscript>，不是把 main.css 的 .io 删了或加了 :not()
+  const mainCss = readFileSync(new URL('../source/css/main.css', import.meta.url), 'utf8');
+  assert.match(mainCss, /\.io\{[^}]*opacity:\s*0/, 'main.css 的 .io{opacity:0} 是 T7 的入场锁，不许为了兜底动它');
+  assert.doesNotMatch(mainCss, /noscript/, '兜底的唯一来源是 head.ejs 的 <noscript>；样式表里再藏一份就是第二来源');
 });
 
 test('T11 chrome 门补漏：装配顺序 nav → body → footer → <script>（T4 轮 2 漏洞第 2 条）', () => {

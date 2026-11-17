@@ -17,4 +17,5 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:site_name" content="<%= config.title %>">
 <meta name="twitter:card" content="summary_large_image">
+<%# 无 JS 兜底（终审 I2）：main.css 的 .io{opacity:0} 只由脚本进场揭走，禁 JS 时整页永久隐形；这条覆写排在样式表之后（同特异度、后来者胜）且只在无脚本时生效 %><noscript><style>.io{opacity:1;transform:none}</style></noscript>
 </head>

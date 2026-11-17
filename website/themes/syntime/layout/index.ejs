@@ -21,7 +21,7 @@
       <div class="browser">
         <div class="b-top"><span class="b-dot"></span><span class="b-dot"></span><span class="b-dot"></span>
           <span class="b-url">localhost:8000/dashboard</span></div>
-        <img class="shot" src="<%- url_for('/images/gallery/dashboard.webp') %>"
+        <img class="shot" src="<%= url_for('/images/gallery/dashboard.webp') %>"
              alt="<%= C.hero.screenshot_alt %>" loading="eager" width="2880" height="2556">
       </div>
       <figcaption class="shot-cap"><%= C.hero.caption %></figcaption>
@@ -190,7 +190,7 @@
         <blockquote class="quote"><%= C.positioning.statement %></blockquote>
         <p><%= C.positioning.statement_note %></p>
         <div class="doc-links">
-          <% C.positioning.links.forEach(function(l){ %><a href="<%- url_for(l.href) %>"><%= l.text %></a><% }) %>
+          <% C.positioning.links.forEach(function(l){ %><a href="<%= url_for(l.href) %>"><%= l.text %></a><% }) %>
         </div>
       </div>
       <div class="io">
