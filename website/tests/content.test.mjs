@@ -48,7 +48,9 @@ test('quickstart step 1 carries no clone line (template owns it)', () => {
 });
 
 test('every URL placeholder is still visibly a placeholder pre-publish', () => {
-  // 这是**发布前**门禁：真 owner / namespace 落地后本条会红，届时连同 :30 注释一起改。
+  // 这是**发布前**门禁：真 owner / namespace 落地后本条会红，届时连同 copy.yml 的 `placeholders` 段
+  // 那条「发布前需要改的 3 处：github_url / dockerhub_url / dockerhub_image」注释一起改
+  // （F28/R41：跨文件出处按语句原文引，不按行号引）。
   assert.match(P.github_repo, /^TODO_/);
   assert.match(P.dockerhub_namespace, /^TODO_/);
   assert.match(P.github_url, /TODO_/);

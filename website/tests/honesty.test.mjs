@@ -15,8 +15,13 @@ const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // token 次序**也钉死了。badge.ejs 的 `cls.join(' ')` 一改 push 顺序、或 T10 给 `.pills-row`
 // 补一个 `io`，都会造成「逻辑没错却红」的假失败；反过来，用 `class="feat-card"` 这种**前缀紧邻**
 // 字面量切片段更坏——feat-card 不再是第一个 token 时切片静默为空，四道 T5 门一起变哑。
-// classVal(...tokens) 只钉「这几个 token 都在这个属性值里」，不钉先后：少一个、换成别的，仍然红
-// （T13 报告逐条变异取证）。属性之间的次序本来就由 `\\b[^>]*` 兜住，两者一套坐标系。
+// classVal(...tokens) 只钉「这几个 token 都在这个属性值里」，不钉先后：少一个、换成别的，仍然红。
+// 取证口径（T13 复审 I2 更正）：Step 2b 当时**没有**留下逐条变异记录——`task-13-report.md` 只覆盖
+// Steps 3–7、无变异段，改完的强度当时只有评审的**静态**核对。复审修复轮补跑了 6 条真变异 + 1 条
+// 回退反证（badge.ejs 的 cls 换序＝绿；`'pill'`→`'pills'`＝4 门红；删 `feat-card`＝3 门红；
+// `.qs-grid` 改名＝段 7 结构门红；`.f-ic` 前补 token＝绿 / 色底 token 被改写＝图标门红），
+// 输出落在同一份报告的「复审修复轮」段——仍**不是**每个 classVal 调用点各一条，别当全覆盖读。
+// 属性之间的次序本来就由 `\\b[^>]*` 兜住，两者一套坐标系。
 // 两个陷阱：① `\bpill\b` 会命中 `pills-row`、`\bbadge\b` 会命中 `badge-note`（连字符也是词边界），
 // 所以按**空白分隔的 class token** 认，不按词边界认；② `(?:[^"]*\s)?` 负责「不在值首」，
 // `(?=[\s"])` 负责「不在值尾」，两头都钉住才有强度——只查 token 出现过等于没查。
@@ -375,7 +380,10 @@ test('S6-3 no feature card body repeats a claim the note walks back', () => {
   }
 });
 
-// 与 tokens.test.mjs:9-12 同一个原型路径与同一个「原型不在就 skip」先例；本文件此前不读原型。
+// 原型路径与「原型不在就 skip」两处先例都来自 tokens.test.mjs：它的
+// `const PROTO_URL = new URL('../../../高保真原型_宣传站.html', import.meta.url)` 给出同一个路径，
+// 它的 `const src = hasProto ? {} : { skip: '原型 HTML 不在约定路径，转录判据无从比对' }` 给出同一种缺位处理。
+// 本文件此前不读原型。（F28/R41：出处按语句原文引，不按行号引。）
 const PROTO_URL = new URL('../../../高保真原型_宣传站.html', import.meta.url);
 const normWs = (x) => x.replace(/\s+/g, '');
 
@@ -398,12 +406,14 @@ test('功能图标逐字节转录自原型 :464-489（按**标题**成对锁定�
     assert.equal(cards.length, copy.features.cards.length, '六卡的 <article> 切不出来');
     cards.forEach((card, i) => {
       const c = copy.features.cards[i];
-      // 产物侧按 class **token** 认容器，色底 token 从属性值里现取：`f-ic` 与 `ic-*` 谁在前都认。
+      // 产物侧按 class **token** 认容器，色底 token 从属性值里按 `ic-*` **形状**现取：
+      // 与它在值里排第几无关（T13 复审 I3：旧写法 `filter(t => t !== 'f-ic')[0]` 取的是
+      // 「除 f-ic 外的第一个」，给 .f-ic 前面补一个新 class 就把它当成色底名 → 假红）。
       // 原型侧（上面那条 matchAll）仍用逐字面量——原型字节不可变，钉死它的形态不是脆性。
       const ico = (card.match(new RegExp(`${tagWith('div', 'f-ic').source}[^>]*>([\\s\\S]*?)<\\/div>`)) || [])[0];
       assert.ok(ico, `第 ${i + 1} 卡「${c.title}」里没有 .f-ic`);
-      const tint = (((ico.match(/class="([^"]*)"/) || [])[1] || '')
-        .trim().split(/\s+/).filter((t) => t !== 'f-ic')[0]) || '';
+      const tint = ((ico.match(/class="([^"]*)"/) || [])[1] || '')
+        .trim().split(/\s+/).find((t) => /^ic-[\w-]+$/.test(t)) || '';
       assert.ok(/^ic-[\w-]+$/.test(tint),
         `第 ${i + 1} 卡「${c.title}」的 .f-ic 里没有 ic-* 色底 token（属性值现取，现 "${tint}"）`);
       const svg = normWs(((ico.match(/<svg[\s\S]*?<\/svg>/) || [''])[0]));
@@ -460,7 +470,8 @@ test('S6-4 数据门：四段齐备、disclaimer 说出「非…实况」、被 
     assert.match(seg.image, /^\/images\/gallery\/[\w-]+\.webp$/, `segments[${i}].image 不是站点内 webp 路径`);
   }
   // §6 诚实性 ④ 要的是**承认截图不是运行中的产品**这一半。brief 的 /非产品运行实况|非运行实况|设计稿/
-  // 三支择一，比 data.test.mjs:59 已有的 /设计稿/ 更宽，等于没新增防线（改写掉「非实况」它照样绿）；
+  // 三支择一，比 data.test.mjs 里 /设计稿/ 那条正则（`assert.match(copy.gallery.disclaimer, /设计稿/)`）
+  // 更宽，等于没新增防线（改写掉「非实况」它照样绿）；
   // 这里钉住「非…实况 / 非…运行」这半句（设计方案 §2.1 段 6 的 V1.1 强制原文就含它），
   // 同时容许「非产品实际运行画面」「非运行中的产品」这类同义改写——/tmp/t7-datagate-probe.mjs 有四例对照。
   assert.match(copy.gallery.disclaimer, /非[^。]{0,14}(?:实况|运行)/,
@@ -517,7 +528,7 @@ test('S6-4 渲染门：四张真截图的 src / alt / 固有尺寸逐张现量�
     assert.match(tag, /loading="lazy"/, `${seg.image}: 段 6 在首屏之下必须懒加载（首屏 eager 那张归 Hero，另有判据）`);
     const file = new URL(`../source${seg.image}`, import.meta.url);
     assert.ok(existsSync(file), `copy 指向 ${seg.image}，但 source${seg.image} 不在，判据无从测量`);
-    // 固有尺寸**现量**（复用本文件 :150 的 intrinsicSize）：模板 DIMS 与文件字节谁改了都当场红，
+    // 固有尺寸**现量**（复用本文件 `function intrinsicSize(file)` 那个现量函数）：模板 DIMS 与文件字节谁改了都当场红，
     // 判据里不再抄第二份尺寸表（控制者裁定 1）。
     const { w, h, tool } = intrinsicSize(file);
     const width = Number(attr(tag, 'width'));
@@ -711,7 +722,8 @@ const spanPerLine = (raw, stepNo) => raw.split('\n').map((seg) => {
   return { cls: m[1].trim().split(/\s+/), text: unesc(m[2]) };
 });
 // 按 <div>/</div> 深度配平切卡片块：惰性 `</div>` 只到第一个就断，.qs-card 里套了 .step-n / .code /
-// .code-bar 三层 div，惰性版会把卡片切成半截（panelBlocks 同族坑，T7 评审 :422-425）。返回 {cls, block, index}
+// .code-bar 三层 div，惰性版会把卡片切成半截（与本文件 `const panelBlocks = (g) => {` 上方注释同族，
+// T7 评审登记的就是那一处）。返回 {cls, block, index}
 // 数组，block 包含开标签本身与配平的 </div>；index 是开标签在 src 中的起始下标。
 const divBlocks = (src, token) => {
   const opens = [...src.matchAll(new RegExp(`<div\\b[^>]*\\bclass="([^"]*)"`, 'g'))]
@@ -781,9 +793,11 @@ test('S6-3 段 7 结构：暗极光段 + .qs-grid 里四步 + dev 徽章的 Dock
   const sec = classTags(q, 'dark-sec', 'section')[0];
   assert.ok(sec, '段 7 必须在 .dark-sec 上（设计方案 §2.1 段 7 = 暗极光）');
   assert.ok(cls(sec).includes('sec'), '段 7 的开标签丢了 .sec（72px 上下留白）');
-  // 裁定 3：.qs-grid 是版式承重墙——main.css 的 `.qs-grid{…grid-template-columns:repeat(3,1fr)…}`、`.qs-full{grid-column:1 / -1}`
-  // （:170）、≤900px 塌单列（:229）全挂在它身上；漏了容器则四步全宽竖排，而 tokens.test.mjs:108
-  // 只断 CSS 里有 .qs-grid 这条规则，救不回 DOM。
+  // 裁定 3：.qs-grid 是版式承重墙——main.css 转录区的 `.qs-grid{display:grid;grid-template-columns:repeat(3,1fr)…}`、
+  // 同区的 `.qs-full{grid-column:1 / -1}`、以及转录区响应式段 `@media (max-width:900px)` 块里的
+  // `.qs-grid{grid-template-columns:1fr}` 全挂在它身上；漏了容器则四步全宽竖排，而 tokens.test.mjs
+  // 的 'every transcribed section has at least one live anchor selector' 那条只断 CSS 里含 `'.qs-grid'`
+  // 这个选择器串，救不回 DOM。（F28/R41：出处按规则原文引，增补段每追加一轮都会顶歪行号。）
   assert.equal(classTags(q, 'qs-grid').length, 1, '段 7 的卡必须包在唯一的 .qs-grid 里');
   // Fix round 1 Important 1：qs-full 计数 + 容器内嵌。漏了 qs-full 则 .qs-full{grid-column:1/-1} 成空转，
   // Docker 卡退化成三列之一；漏了容器则 qs-full 与四步卡全在 grid 外，版式判据集体失明。
@@ -876,7 +890,8 @@ test('T8 逐行数据门：每步代码块与 copy.quickstart.steps[].code 逐�
     assert.equal((raw.match(/\n/g) || []).length, want(st).length - 1,
       `第 ${st.no} 步的换行数不是 lines-1：模板往 <pre> 里喂了多余空白`);
     // Fix round 1 Minor 3：删除 `assert.doesNotMatch(raw, /\n[ \t]/)` —— 冗余且 false-red-prone。
-    // 冗余：模板引入的缩进已被上面 deepEqual（:837）与换行计数（:841）双重覆盖（M9 证据）。
+    // 冗余：模板引入的缩进已被上面 `assert.deepEqual(preLines(raw), want(st), …)` 的逐行比对与
+    // `assert.equal((raw.match(/\n/g) || []).length, want(st).length - 1, …)` 的换行计数双重覆盖（M9 证据）。
     // False-red：合法的 bash 续行（原型 :720-721 的 `docker run … \` + 两空格缩进 `-e DATABASE_URL=…`）
     // 会让此断言误红，而 deepEqual 因 copy 同源照样绿。保留换行计数（更清晰的诊断）。
   }
