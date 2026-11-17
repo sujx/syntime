@@ -410,7 +410,8 @@ test('T11 SEO 门：canonical 与 og:url 同推导、og:image 指向真实文件
 
 test('T11 模板转义门：url_for 的输出一律走 <%=%>，产物路径逐字节不变（brief Interfaces）', () => {
   const s = html('index.html');
-  for (const f of ['../themes/syntime/layout/layout.ejs', '../themes/syntime/layout/partial/head.ejs']) {
+  for (const f of ['../themes/syntime/layout/layout.ejs', '../themes/syntime/layout/partial/head.ejs',
+    '../themes/syntime/layout/page.ejs', '../themes/syntime/layout/post.ejs']) {
     const src = readFileSync(new URL(f, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /<%-\s*url_for/,
       `${f.split('/').pop()} 里有未转义的 url_for 输出（<%- 形态）：url_for 返回的是纯路径字符串，`
@@ -600,4 +601,152 @@ test('T11 结转 C4：剪贴板拒绝支路的存在性（删掉它原来 70 条
   assert.deepEqual(thenCatchChain('a.writeText(t).then(function () { f(g(b), 1); h(); }, function () { i(); })\n'
     + '.catch(function () { j(k(l)); });'), ['then', 'catch'],
     '走链器被分支体里的嵌套括号或换行带偏了（真代码就是这个形状，误判即假红）');
+});
+
+// ---------------------------------------------------------------------------
+// T12 博客：/updates/ 列表页 + 首篇 ALPHA 公告
+// 判据一律按**形状**写（裁定 T-4）：字面量 class="post-item" 命不中规格要求的
+// class="feat-card post-item"（T-3），字面量 <time datetime=…> 命不中带 class 的
+// <time class="post-date" datetime=…>。为绿去放宽既有门或迁就字面量都是禁手。
+// ---------------------------------------------------------------------------
+
+const UPDATES_PAGE = 'updates/index.html';
+// T-1：Hexo 的 :title 取的是**文件名去掉日期前缀**的 slug，故文章文件名必须叫
+// 2026-11-16-syntime-alpha.md，测试路径才落在下面这条上。
+const ALPHA_POST = '2026-11-16/syntime-alpha/index.html';
+const ALPHA_SRC = '../source/_posts/2026-11-16-syntime-alpha.md';
+
+// 列表页只点名读这两个新产物：既有 tests/*.mjs 没有任何目录遍历
+// （grep -rn "readdirSync|glob" 只命中 copy.yml 的对象遍历与 CSS 扫描器），
+// 不点名就是"新产物对全产物门不可见"，丢文件也照样绿。
+test('T12 /updates/ 列表页存在，且不回退渲染首页模板', () => {
+  assert.ok(existsSync(pub(UPDATES_PAGE)),
+    `public/${UPDATES_PAGE} missing — 需要先有 themes/syntime/layout/page.ejs 与 source/updates/index.md，再跑 npm run build`);
+  const list = html(UPDATES_PAGE);
+  // T-6：.sec-head 只有 text-align/max-width，裸 <h1> 会落到 UA 默认 2em，与首页标题体系脱节
+  assert.match(list, /<h1\b[^>]*>更新日志<\/h1>/, '列表页标题须是 <h1 class="h2">（T-6 复用 Token）');
+  assert.match(list, /<article\b[^>]*\bclass="[^"]*\bpost-item\b/, '文章卡片须复用既有 feat-card（T-3）');
+  // T-11 的**操作项**照做（站内链接走 url_for(p.path)，不许换 p.permalink）；但它对渲染值的
+  // 那句实测描述不成立：Post.virtual('path')（hexo/dist/models/post.js:45）返回的就是
+  // post_permalink 的 stringify 结果 `2026-11-16/syntime-alpha/`，**不含 index.html**，
+  // index.html 是 Router 落盘时才补的。列表 href 与 canonical 因此同形，见下方交叉断言。
+  assert.match(list, /<a\b[^>]*href="\/2026-11-16\/syntime-alpha\/"/, '列表链接必须由 url_for(p.path) 出');
+  assert.doesNotMatch(list, /https:\/\/syntime\.cn\/2026/, '不许直接吐 p.permalink（绝对 URL，换 root 全断）');
+  // 交叉断言（判据不空转）：列表 href 必须与文章页自己的 canonical 指向同一个资源
+  assert.ok(existsSync(pub(ALPHA_POST)), `${ALPHA_POST} 不存在，无从交叉比对`);
+  const postCanon = (html(ALPHA_POST).match(/<link rel="canonical" href="([^"]*)"/) || [])[1] || '';
+  assert.equal(postCanon.replace(/^https:\/\/syntime\.cn/, ''), '/2026-11-16/syntime-alpha/',
+    '文章页 canonical 的 path 部分变了，上面那条列表 href 判据就得跟着重推');
+  assert.doesNotMatch(list, /class="[^"]*\bhero\b/, 'page.ejs 缺失时 Hexo 回退 index.ejs，会把整个 Hero 画进 /updates/');
+  assert.match(list, /<header\b[^>]*\bclass="nav"/, 'layout.ejs 的 chrome 必须在（layout:false 会一起丢掉）');
+  assert.match(list, /<footer\b[^>]*\bclass="foot"/, '同上：页脚由 layout 装配');
+  assert.doesNotMatch(list, /class="[^"]*\bio\b/, 'T-9：博客页不得进 .io 揭示集合，禁用 JS 时正文会消失');
+  assert.doesNotMatch(list, /<%[=%-]|\bundefined\b|\[object Object\]/, 'EJS 泄漏');
+});
+
+test('T12 首篇 ALPHA 公告存在，路径与禁词都守住', () => {
+  assert.ok(existsSync(pub(ALPHA_POST)),
+    `public/${ALPHA_POST} missing — permalink 与 new_post_name 必须配对（见报告 T-1 实测矩阵）`);
+  const post = html(ALPHA_POST);
+  assert.match(post, /<article\b[^>]*\bclass="[^"]*\bpost\b/);
+  assert.match(post, /ALPHA/);
+  assert.doesNotMatch(post, /docker run|开箱即用|一键拉起|三条链路|T\+1/, '§6 诚实性：未成立的能力不许写成已成立');
+  assert.match(post, /<time\b[^>]*datetime="2026-11-16"/, 'T-4：判据须容忍 time 上带 class');
+  assert.doesNotMatch(post, /class="[^"]*\bio\b/, 'T-9');
+  assert.doesNotMatch(post, /<%[=%-]|\bundefined\b|\[object Object\]/, 'EJS 泄漏');
+  // 双前缀嵌套 = new_post_name 没配对（实测矩阵第 3 行），点名失败模式而不是只报 missing
+  for (const bad of ['2026-11-16/2026-11-16-syntime-alpha/index.html']) {
+    assert.ok(!existsSync(pub(bad)), `出现双前缀路径 public/${bad}：permalink 与 new_post_name 脱钩了`);
+  }
+});
+
+// 列表预览的抽取器（与 page.ejs 的形状约定同源），自检见下方 fixture 断言
+const firstPreview = (s) => {
+  const m = s.match(/<article\b[^>]*\bclass="[^"]*\bpost-item\b[\s\S]*?<p>([\s\S]*?)<\/p>/);
+  return m ? m[1].replace(/<[^>]+>/g, '').trim() : null;
+};
+
+test('T12 列表预览 = 公告正文首段**全文**（T-7：hexo-excerpt 未装，excerpt 支路是空转）', () => {
+  const src = readFileSync(new URL(ALPHA_SRC, import.meta.url), 'utf8');
+  const para = src.replace(/^---[\s\S]*?\n---[\s\S]*?/, '').split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean)[0];
+  assert.ok(para && para.length > 10, '公告正文首段没取到，判据会空转');
+  const preview = firstPreview(html(UPDATES_PAGE));
+  assert.ok(preview !== null, '列表页文章卡片里没有预览 <p>');
+  // 全文相等而非 includes：来源被换掉（改回 p.excerpt / 别的段）或又被 slice(0,120) 截断，当场红
+  assert.equal(preview, para, '预览必须逐字等于公告首段全文，不截断、不换源');
+  // 抽取器自检：真实卡片形状（带 h3/time）、带内联标签的段、没有 <p> 的卡片都要认得，否则上条是空转
+  assert.equal(firstPreview('<article class="feat-card post-item"><h3>t</h3><time>x</time><p>甲乙丙丁戊</p></article>'),
+    '甲乙丙丁戊', '抽取器漏掉了带 h3/time 的卡片形状');
+  assert.equal(firstPreview('<article class="feat-card post-item"><p>甲<b>乙</b>丙</p></article>'),
+    '甲乙丙', '抽取器没剥掉内联标签');
+  assert.equal(firstPreview('<article class="feat-card post-item"><h3>只有标题</h3></article>'), null,
+    '抽取器在没有 <p> 时应返回 null，而不是误抓别处的段');
+});
+
+test('T12 返回链接文案来自 copy.labels.post_back（T-5：约束 1 模板里不得有别的中文来源）', () => {
+  assert.equal(typeof copy.labels.post_back, 'string', 'labels.post_back 必须是字符串');
+  assert.ok(copy.labels.post_back.length > 0);
+  // 新 key 只能进 labels：data.test.mjs 钉着 Object.keys(copy).length === 14
+  assert.ok(!('post_back' in copy), 'post_back 不得挂在 copy 顶层，那是第 15 个顶层 key');
+  const postTpl = readFileSync(new URL('../themes/syntime/layout/post.ejs', import.meta.url), 'utf8')
+    .replace(/<%#[\s\S]*?%>/g, '');   // 剥注释：同 honesty.test.mjs 的模板门纪律
+  assert.doesNotMatch(postTpl, /全部更新/, 'post.ejs 硬写了返回链接文案，违反约束 1（单一来源）');
+  assert.match(postTpl, /C\.labels\.post_back/, 'post.ejs 必须由 copy.labels.post_back 出文案');
+  // page.ejs 首行取了 C 全程不用 = 死代码（T-5）
+  const pageTpl = readFileSync(new URL('../themes/syntime/layout/page.ejs', import.meta.url), 'utf8');
+  assert.doesNotMatch(pageTpl, /site\.data\.copy/, 'page.ejs 不消费 copy，<% const C = … %> 是死代码，删掉');
+  const post = html(ALPHA_POST);
+  assert.match(post, /<p\b[^>]*\bclass="post-back"[\s\S]{0,200}?href="\/updates\/"/,
+    '返回链接必须由 url_for 拼到 /updates/');
+  assert.ok(post.includes(`>${copy.labels.post_back}</a>`), '产物里必须渲染出 labels.post_back 的字面值');
+});
+
+test('T12 非首页的导航锚点拼回首页（T-2：谓词用 is_current，is_home 在本站恒 false）', () => {
+  const navBlock = (s) => (s.match(/<nav class="nav-links"[\s\S]*?<\/nav>/) || [''])[0];
+  for (const f of [UPDATES_PAGE, ALPHA_POST]) {
+    const block = navBlock(html(f));
+    assert.ok(block, `${f} 找不到 nav-links 块`);
+    assert.doesNotMatch(block, /href="#/, `${f} 上还留着裸锚点：点了不跳（T4 轮 1 的悬空锚点）`);
+    for (const a of copy.nav.anchors) {
+      assert.ok(block.includes(`href="/${a.href}"`), `${f} 缺 ${a.href} 的首页回链`);
+    }
+  }
+  // 首页必须仍是裸锚点：is_current('/') 在 home 为真。误用 is_home() 时这条与 honesty 那条一起红
+  const home = navBlock(html('index.html'));
+  assert.match(home, /href="#foundation"/, '首页导航被改写成 /#… 说明谓词用错了（is_home 恒 false）');
+  assert.doesNotMatch(home, /href="\//, '首页 nav-links 里不该出现带 root 前缀的链接');
+});
+
+test('T12 两个新页的 skip link 都落得进正文（T-8：<main id="main"> 全站装配一次）', () => {
+  for (const f of [UPDATES_PAGE, ALPHA_POST]) {
+    const s = html(f);
+    assert.match(s, /<a\b[^>]*\bhref="#main"/, `${f} 缺 skip link（应在 layout.ejs，别在页模板里再写一遍）`);
+    assert.match(s, /<main\b[^>]*\bid="main"/, `${f} 的 <main> 缺 id="main"，skip 会落空`);
+    assert.equal([...s.matchAll(/<main\b/g)].length, 1, `${f} 只能有一个 <main>`);
+    assert.equal([...s.matchAll(/href="#main"/g)].length, 1, `${f} 的 skip link 不应重复装配`);
+  }
+});
+
+test('T12 新页进 sitemap，且 sitemap 不指向不存在的产物', () => {
+  const map = html('sitemap.xml');
+  // 逐字取自现量产物：hexo-generator-sitemap 的模板对 page 用 `page.permalink`
+  // （core page 的那条含 index.html），对 post 用 post.permalink（按 permalink 模式，不含）。
+  // 于是 /updates/ 在 sitemap 里是 …/updates/index.html，而 canonical 是 …/updates/ ——
+  // 与 home 早已存在的 …/index.html 同族（本任务不扩范围去改生成器模板，登记给 T13）。
+  assert.match(map, /<loc>https:\/\/syntime\.cn\/updates\/index\.html<\/loc>/);
+  assert.match(map, /<loc>https:\/\/syntime\.cn\/2026-11-16\/syntime-alpha\/<\/loc>/);
+  // 反事实门（写这条的当场就是它抓到的 bug）：文章 frontmatter 的 tags 会让生成器把
+  // locals.tags 逐条发进 sitemap，而本站没装 hexo-generator-tag，public/ 里没有 tags/release/
+  // 这个文件——抓取端表现为 404。_config.yml 的 sitemap.tags/categories=false 关掉这条路。
+  const locs = [...map.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert.ok(locs.length >= 4, 'sitemap 空了或塌了，下面的逐条解析无从谈起');
+  for (const loc of locs) {
+    const p = loc.replace(/^https:\/\/syntime\.cn/, '').replace(/&/g, '&amp;');
+    const cands = p.endsWith('/') ? [`${p}index.html`] : p.endsWith('.html') ? [p] : [`${p}/index.html`, p];
+    assert.ok(cands.some((c) => existsSync(pub(c.replace(/^\//, '')))),
+      `sitemap 里的 ${loc} 在 public/ 下没有对应产物（404）：要么补生成器，要么别再发这条 URL`);
+  }
+  assert.equal(locs.length, 4,
+    '站点地图条目数变了（现量 4 条：post 1 + core page 2〔updates、index〕+ config.url 1）；'
+    + '新增/丢失可索引页都该在这里显形，别只改这个数字');
 });

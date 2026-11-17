@@ -20,8 +20,14 @@
         <div class="wm-sub">与时偕行 · 多云成本管理</div>
       </div>
     </div>
+    <%# 悬空锚点收口（T4 轮 1 遗留，T12 修）：本导航由 layout.ejs 全站装配，`#foundation`
+        这类裸锚点只在首页跳得动，在 /updates/ 与文章页上点了没反应。
+        谓词必须是 is_current('/')：is_home() 读的是 page.__index，只有 hexo-generator-index
+        会写，本站首页是 source/index.md（core page，只置 __page），故恒为 false —— 用它会
+        把首页自己的锚点也改写成 /#…，tests/honesty.test.mjs 的镜像门当场红（那是门在报错）。
+        is_current 把 '/' 归一为「当前路径 === /index.html」，且不含 root，alt-root 构建同样成立。 %>
     <nav class="nav-links" aria-label="页面锚点">
-      <% C.nav.anchors.forEach(function(a){ %><a href="<%= a.href %>"><%= a.text %></a><% }) %>
+      <% C.nav.anchors.forEach(function(a){ %><a href="<%= is_current('/') ? a.href : url_for('/') + a.href %>"><%= a.text %></a><% }) %>
     </nav>
     <div class="nav-cta">
       <% C.nav.links.forEach(function(l){ %><a class="nav-log" href="<%- url_for(l.href) %>"><%= l.text %></a><% }) %>

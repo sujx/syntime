@@ -1,0 +1,29 @@
+<%# 列表页布局。三件事必须成立，都有判据挂在 tests/build.test.mjs 的 T12 段：
+    ① 本文件必须存在——Hexo 找不到同名布局时**回退渲染 index.ejs**，/updates/ 会把整个
+       Hero 画出来；改成 layout:false 则连 layout.ejs 的 nav/footer 一起丢。
+    ② <main> 要带 id="main"：layout.ejs 的 skip link 指的就是它（T11 定的全站契约），
+       skip 本身只由 layout 装配一次，这里不重复写。
+    ③ 正文一律不得挂 .io：揭示观察器只认 .io，挂上就等于"禁用 JS 时博客正文消失"。
+    本布局不消费内容层，所以不取它——取了不用就是死代码。
+    卡片复用 .feat-card（全站唯一的卡片语言；增补段里没有 `.card` 这个类），
+    排序走 site.posts 的 date 倒序。链接走 url_for(path)：permalink 字段是**不含 root**
+    的绝对 URL，用它做站内链接在 alt-root 部署下全断。 %>
+<main id="main">
+<section class="sec">
+  <div class="wrap wrap-narrow">
+    <div class="sec-head"><h1 class="h2"><%= page.title %></h1></div>
+    <div class="post-list">
+      <% site.posts.sort('date', 'desc').forEach(function (p) { %>
+      <article class="feat-card post-item">
+        <h3><a href="<%= url_for(p.path) %>"><%= p.title %></a></h3>
+        <time datetime="<%= p.date.format('YYYY-MM-DD') %>"><%= p.date.format('YYYY-MM-DD') %></time>
+        <%# 预览取正文第一个 <p> 的全文：摘要插件没装，excerpt 恒空，截断式切片会把
+            句子切在第二条列表项中间且不带省略号（裁定 T-7）。剥掉内联标签再转义输出。 %>
+        <% var lead = p.content.match(/<p>([\s\S]*?)<\/p>/); %>
+        <% if (lead) { %><p><%= lead[1].replace(/<[^>]+>/g, '') %></p><% } %>
+      </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+</main>

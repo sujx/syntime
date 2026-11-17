@@ -325,3 +325,21 @@ section{scroll-margin-top:96px}
   background:var(--primary-600);color:#fff;font-weight:600;text-decoration:none;
   transform:translateY(-100%);transition:transform 200ms var(--ease-out)}
 .skip:focus{transform:none}
+
+/* ============ T12 博客 /updates/：列表页与文章页 ============ */
+/* 约束 7：全部取既有 Token，不新立间距/字号规格。
+   .wrap-narrow 只收宽度（.wrap 的 max-width:1200px 由源码顺序让位），正文列走 760px。
+   列表卡片复用 .feat-card（全站唯一的卡片语言），只覆写内距与块级排布：
+   .feat-card 在增补段是 flex 列，卡片里要塞日期与摘要，改回块级最省事也不动别的卡。 */
+.wrap-narrow{max-width:760px}
+.post-list .post-item{display:block;padding:var(--space-5);margin-bottom:var(--space-4)}
+.post-item h3{font-size:15px;font-weight:600;color:var(--gray-900)}
+.post-item time{font-size:12px;color:var(--gray-500);font-family:var(--font-mono)}
+.post-item p{font-size:14px;color:var(--gray-600);margin-top:var(--space-2);line-height:1.7}
+.post h1{font-size:28px;font-weight:700;color:var(--gray-900);line-height:1.25}
+.post-date{display:block;font-size:12px;color:var(--gray-500);font-family:var(--font-mono);margin:var(--space-2) 0 var(--space-8)}
+.post-body h2{font-size:20px;font-weight:600;color:var(--gray-900);margin:var(--space-8) 0 var(--space-3)}
+.post-body p,.post-body li{font-size:15px;line-height:1.85;color:var(--gray-700)}
+.post-body ul{padding-left:var(--space-5);display:grid;gap:var(--space-2)}
+.post-body code{background:var(--primary-50);color:var(--primary-700);padding:1px 5px;border-radius:4px;font-family:var(--font-mono);font-size:13px}
+.post-back{margin-top:var(--space-10);font-size:13px}

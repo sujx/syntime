@@ -13,7 +13,8 @@ timezone: Asia/Shanghai
 
 url: https://syntime.cn
 root: /
-permalink: :year/:month/:day/:title/
+permalink: :year-:month-:day/:title/
+new_post_name: :year-:month-:day-:title.md
 theme: syntime
 
 # F5：三项必须同时关，否则代码块被包成带行号的 <table>，复制按钮会连行号一起复制
@@ -24,6 +25,12 @@ highlight:
 
 sitemap:
   path: sitemap.xml
+  # T12 现量取证：生成器（hexo-generator-sitemap/lib/generator.js）在 tags/categories 为真值时
+  # 把 locals.tags 逐条写进 <loc>，而本站没装 hexo-generator-tag —— 首篇文章带 tags: [release]
+  # 当场长出 https://syntime.cn/tags/release/ 这条**没有对应产物**的 URL（public/ 里没有该文件，
+  # 抓取端表现为 404）。关掉的正是"给不存在的归档页发索引"这条路，不是隐藏内容。
+  tags: false
+  categories: false
 
 # 首页 = source/index.md 走 page 路由生成（构建产物 public/index.html 实测）；
 # 本站不装 hexo-generator-index，故**不写** index_generator 配置——写了没有消费者，是陷阱。
