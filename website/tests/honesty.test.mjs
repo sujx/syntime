@@ -276,15 +276,19 @@ test('pills row renders all 4 positioning pills', () => {
 // 取证见 task-5-report.md 的 Fix round 1 / Minor 2。
 function media900Blocks(src) {
   const out = [];
-  for (const m of src.matchAll(/@media \(max-width:900px\)\s*\{/g)) {
+  // T11 台账 R27(a)：扫描前先剥 CSS 注释，否则注释里写的 `.nav{top:12px}` 这种片段
+  // 会让花括号深度走偏（幻影块假红、游离 `}` 截断假红、两处不配对相互抵消假通过）。
+  // 同类修法见 build.test.mjs 的 noCssComments / appendixRules。
+  const bare = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const m of bare.matchAll(/@media \(max-width:900px\)\s*\{/g)) {
     let depth = 1, j = m.index + m[0].length;
-    while (j < src.length && depth > 0) {
-      if (src[j] === '{') depth++;
-      else if (src[j] === '}') depth--;
+    while (j < bare.length && depth > 0) {
+      if (bare[j] === '{') depth++;
+      else if (bare[j] === '}') depth--;
       j++;
     }
     assert.ok(depth === 0, 'APPENDIX 里有 @media (max-width:900px) 的花括号没配上，判据无从切块');
-    out.push(src.slice(m.index + m[0].length, j - 1));
+    out.push(bare.slice(m.index + m[0].length, j - 1));
   }
   return out;
 }
@@ -585,7 +589,7 @@ test('T7 模板门：段 6 由 C.gallery.segments 迭代出，DIMS 键集与 cop
 // 数条数两头都坏：T11 加一条合法的 `@media (max-width:900px){.shot-frame{max-height:60vh}}` 会被判红，
 // 而 `.shot-frame,.x{overflow:visible}` 这种合并选择器里的第二个 overflow 来源数不到（实测 49 条全绿）。
 // 分堆走花括号深度（同 media900Blocks 的思路），扫描前先剥注释：本段注释里就原样写着
-// `.shot-frame{background:#fff}`（main.css:275），不剥就是拿注释顶替真规则。
+// `.shot-frame{background:#fff}`（转录区的 `.shot-frame` 背景色声明），不剥就是拿注释顶替真规则。
 // media900Blocks 自己的那一行修仍按台账 R27(a) 归 T11，本门不越界替它改。
 // 分堆器要求 src 从一条**规则**起头；但调用方传的是 css.slice(marker)，marker 落在注释内部
 // （`/* ============ V1.1–V1.3 增补结构 … ============ */`），切片因此自带一个没有开口的 `*/`。
@@ -1072,8 +1076,8 @@ test('S2-1 banner dismiss is session-only, labelled, and never localStorage', ()
   assert.match(js, /sessionStorage/);
   assert.doesNotMatch(js, /localStorage/);
   // F2（审查 Important 2）：设计方案 §2 段 1 与 Global Constraint 6 点名的就是**这个键、这个值**，
-  // 而上一行只钉了「有没有 sessionStorage」。grep 全仓（tests/ + themes/ + source/）证明
-  // `syntime.alpha.dismissed` 只出现在 main.js，所以把键改成 syntime.banner.off、或把值从 '1' 改成 'true'，
+  // 而上一行只钉了「有没有 sessionStorage」。除判据自身外，`syntime.alpha.dismissed` 只出现在 main.js，
+  // 所以把键改成 syntime.banner.off、或把值从 '1' 改成 'true'，
   // 原来的 70 条门全绿而契约已断（T12 的 /updates/ 页将来读同一个键）。
   // 与 M9 / M21 修过的「membership 弱于 key-pinned」同族：读写各钉一条逐字的键名 + 值。
   const ALPHA_KEY = String.raw`syntime\.alpha\.dismissed`;
@@ -1102,7 +1106,7 @@ test('S2-1 banner dismiss is session-only, labelled, and never localStorage', ()
   const tags = [...slice.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
   assert.equal(tags.length, 1, '产物 .alpha 里必须恰好一枚按钮');
   assert.match(tags[0], /\btype="button"/,
-    '必须是 type="button"（T8 :893 钉复制按钮的同族：将来被 form 包住也不会变 submit）');
+    '必须是 type="button"（与本文件「复制按钮 type="button"」那条门同族：将来被 form 包住也不会变 submit）');
   assert.match(tags[0], /\bdata-dismiss-alpha\b/, '脚本认的钩子是 data-dismiss-alpha，且必须在按钮上');
   assert.match(tags[0], new RegExp(`aria-label="${esc(copy.labels.close_banner)}"`),
     '产物里按钮的 aria-label 必须逐字等于 copy.labels.close_banner');

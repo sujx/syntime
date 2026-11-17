@@ -244,7 +244,8 @@ section{scroll-margin-top:96px}
 .alpha{background:var(--primary-50);color:var(--primary-900);font-size:13px;line-height:1.6;
   padding:calc(var(--space-3) + 70px) var(--space-6) var(--space-3);
   text-align:center;border-bottom:1px solid var(--primary-100)}
-.alpha .pill{margin-left:var(--space-2);vertical-align:middle}
+/* `.alpha .pill` 的 margin-left 已并入 `.alpha-body` 的 column-gap（T11 间距收敛：
+   「文字→徽章」的水平间距就此只有一个来源，窄屏换行时徽章不再被 margin-left 顶偏） */
 /* T10 §2 段 1「右侧可关」：横幅排成「文字块 + 关闭按钮」一行（.alpha-x 只用 --primary-*，印章红禁入 §0-4）。
    三条纪律：① 本块必须排在 :244 那条**之后**，且刻意不写 padding / background / color —— 留白、底色、
    文字色只许有 :244 一个来源，§6-5 的首屏几何判据（honesty.test.mjs 的 "first-screen clearance" 门）读的是它找到的**第一条**
@@ -257,15 +258,15 @@ section{scroll-margin-top:96px}
    实测见报告的变异条「删掉这条规则后关闭按钮点不动」。 */
 .alpha{display:flex;align-items:flex-start;justify-content:center;gap:var(--space-3)}
 .alpha[hidden]{display:none}
-.alpha-body{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;justify-content:center}
+.alpha-body{display:flex;align-items:center;column-gap:var(--space-4);row-gap:var(--space-2);flex-wrap:wrap;justify-content:center}
 .alpha-x{flex:none;border:0;background:transparent;color:var(--primary-600);cursor:pointer;
-  font-size:18px;line-height:1;padding:0 var(--space-2);border-radius:var(--radius-md)}
+  font-size:18px;line-height:24px;padding:0 var(--space-2);border-radius:var(--radius-md)}
 .alpha-x:hover{background:var(--primary-100)}
 .alpha-x:focus-visible{outline:2px solid var(--primary-600);outline-offset:2px}
 /* 卡右上角状态徽章：复用 §5.7 pill，不新立字号 */
-.feat-card{position:relative}
+.feat-card{position:relative;display:flex;flex-direction:column}
 .feat-card>.pill.badge{position:absolute;top:var(--space-5);right:var(--space-5)}
-.badge-note{margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--gray-100);
+.badge-note{margin-top:auto;padding-top:var(--space-3);border-top:1px solid var(--gray-100);
   font-size:12px;line-height:1.7;color:var(--gray-500)}
 .disclaimer{text-align:center;font-size:12px;color:var(--gray-500);margin-bottom:var(--space-4)}
 /* 真截图兜底：与增补段已有的 .shot-frame img（T3 落在此区）同义，
@@ -298,7 +299,7 @@ section{scroll-margin-top:96px}
    实测 1440px 视口 + CDP getBoundingClientRect：`.pill` 是 24px 高的 inline-flex（转录区 :102），
    挂在 16px / line-height 24px 的 `.qs-card h3`（:158）基线上时，徽章中心比标题文字中心**低 4.00px**，
    徽章底边正压在 h3 底边上，把 h3 的行盒从 24px 撑到 28px（同段另四张卡的 h3 是 24px）。
-   取 `.alpha .pill`（:247，同一件「文字 + 徽章」的事）那两条声明：vertical-align:middle 把下沉收到
+   段 7 的徽章对齐与横幅的「文字→徽章」间距同思路：vertical-align:middle 把下沉收到
    2.66px、行盒回到 26.66px；margin-left:var(--space-2) 把「标题→徽章」的可视间距从 3.63px（只剩一个
    折叠空格）抬到 11.63px。
    brief 的 position:static **不加**：全站唯一给徽章绝对定位的规则是增补段的 `.feat-card>.pill.badge` 那条，
@@ -309,3 +310,18 @@ section{scroll-margin-top:96px}
    background=rgb(239,244,254) / color=rgb(59,99,216)，即 --primary-50 浅底 + --primary-600 暗字，
    落在 #1A2B4F（:160）的极光底上是对比最高的一档。 */
 .qs-card h3 .pill{margin-left:var(--space-2);vertical-align:middle}
+/* T11 对比度覆写（设计方案 §4 可访问性：深色段正文 rgba(255,255,255,.85)+）——
+   覆盖转录区的 .66 与 .78 基准，写在后面靠源码顺序胜出。覆写打在容器上（裁定 R-8：
+   `.qs-env span` 自己不带 color，继承自 `.qs-env`，单一来源） */
+.dark-sec .lead{color:rgba(255,255,255,.85)}
+.dark-sec .qs-card p{color:rgba(255,255,255,.85)}
+.dark-sec .qs-env{color:rgba(255,255,255,.85)}
+/* T11 段 7 溢出修复（台账 R38）：390px 档 1fr 列被 clone 行的 min-content 撑破，
+   .qs-card 收到 0 让 grid 项的最小尺寸取 min-content → 0，列宽不再被内容撑超视口 */
+.qs-card{min-width:0}
+/* T11 跳锚链接（裁定 R-4）：未聚焦时靠 transform 藏到视口外，不占版面也不掉出 Tab 顺序；
+   聚焦时收回来，落在首屏左上角。display/visibility 禁写（会把元素从 Tab 顺序里删掉） */
+.skip{position:fixed;top:0;left:0;z-index:9999;padding:var(--space-3) var(--space-5);
+  background:var(--primary-600);color:#fff;font-weight:600;text-decoration:none;
+  transform:translateY(-100%);transition:transform 200ms var(--ease-out)}
+.skip:focus{transform:none}
