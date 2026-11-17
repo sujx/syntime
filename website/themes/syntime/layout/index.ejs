@@ -138,7 +138,7 @@
     占位符判据读的都是这份形态（改在未转义输出上，两条判据同时红）。
     step 1 首行的 clone 由 placeholders.github_url 现拼（copy.yml:168 的注释授权的正是这一处），
     其余每一行都来自 copy.quickstart.steps[].code：模板里不写任何命令文本。 %>
-<section class="sec dark-sec" id="quickstart">
+<section id="quickstart" class="sec dark-sec">
   <div class="wrap">
     <div class="sec-head io">
       <h2 class="h2"><%= C.quickstart.heading %></h2>
@@ -179,7 +179,7 @@
 
 <%# 段 8 开源与定位：about-grid 两栏（左 statement + links，右 stack chips），CSS 已转录自原型 :511-520。
     R-4 备案：l.href 走未转义输出（copy.yml 是受信任数据源， presently 安全；若将来 href 来源改为用户输入须切到转义输出）。 %>
-<section class="sec" id="about">
+<section id="about" class="sec">
   <div class="wrap">
     <div class="sec-head io">
       <h2 class="h2"><%= C.positioning.heading %></h2>
@@ -203,7 +203,7 @@
 </section>
 
 <%# 段 9 FAQ：details/summary 原生折叠，T10 无额外 JS 依赖。5 条全部来自 copy.faq.items[]。 %>
-<section class="sec sec-gray" id="faq">
+<section id="faq" class="sec sec-gray">
   <div class="wrap">
     <div class="sec-head io"><h2 class="h2"><%= C.faq.heading %></h2></div>
     <div class="faq">

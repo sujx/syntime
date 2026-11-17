@@ -86,4 +86,16 @@
       try { sessionStorage.setItem('syntime.alpha.dismissed', '1'); } catch (err) { /* 同上 */ }
     });
   }
+
+  /* R-4 跳至正文：拦截 .skip 点击，instant 滚动到 #main 顶部 */
+  var skip = document.querySelector('.skip');
+  var mainEl = document.getElementById('main');
+  if (skip && mainEl) {
+    skip.addEventListener('click', function (e) {
+      e.preventDefault();
+      window.scrollTo({ top: mainEl.offsetTop, behavior: 'instant' });
+      mainEl.setAttribute('tabindex', '-1');
+      mainEl.focus({ preventScroll: true });
+    });
+  }
 })();
