@@ -54,6 +54,9 @@ labels:
     phase2: mute
   copy_button: "复制"
   copy_done: "已复制"
+  # 横幅关闭按钮的可访问名（§2 段 1「右侧可关」）。按钮正文只有 &times; 字形，
+  # 触屏无 hover 也不写 title —— 读屏与判据都只认这一个来源。
+  close_banner: "关闭提示"
 
 nav:
   anchors:

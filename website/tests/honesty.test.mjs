@@ -1042,3 +1042,87 @@ test('段10 散文门：brand / links[].text / copyright / domain 全部渲染',
   // domain
   assert.ok(ft.includes(copy.footer.domain), `页脚没有渲染 footer.domain「${copy.footer.domain}」`);
 });
+
+// ---------------------------------------------------------------------------
+// T10 段 1：ALPHA 横幅的「右侧可关」（设计方案 §2 段 1 / 台账 R20）+ 脚本侧的 CSS 契约
+// ---------------------------------------------------------------------------
+
+// 控制者裁定 D-1（与 build.test.mjs 的 jsCode() 同一把剥离器，两个文件各自独立跑、不跨文件 import）：
+// `doesNotMatch(/localStorage/)` 管的是**代码**。brief Step 0 让注释里原样写
+// 「不写 localStorage」，不剥注释就是 brief 的散文判红 brief 自己的门。
+// 局限同处已写明：这不是词法器，字符串里的 `//` 会被当注释起点 —— main.js 里不许出现 `://`，
+// 那条守卫在 build.test.mjs 的预算门里。
+const jsCodeOnly = () => readFileSync(new URL('../source/js/main.js', import.meta.url), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+test('S2-1 banner dismiss is session-only, labelled, and never localStorage', () => {
+  // 先剥 `<%# %>`（:240 的 T5 模板门同族纪律）：横幅的说明注释里若举例写 `aria-label="关闭提示"`，
+  // 不该把「模板不硬写中文」这条判据判红。
+  const nav = readFileSync(new URL('../themes/syntime/layout/partial/nav.ejs', import.meta.url), 'utf8')
+    .replace(/<%#[\s\S]*?%>/g, '');
+  const js = jsCodeOnly();
+  assert.match(nav, /data-dismiss-alpha/);
+  assert.match(nav, /aria-label="<%= C\.labels\.close_banner %>"/);
+  assert.ok(copy.labels.close_banner, 'close_banner must come from copy.yml');
+  assert.match(js, /sessionStorage/);
+  assert.doesNotMatch(js, /localStorage/);
+  // 中文单一来源（§3）：关闭按钮的可访问名只能来自 labels，模板不写第二个来源
+  assert.equal(typeof copy.labels.close_banner, 'string');
+  assert.ok(copy.labels.close_banner.trim().length >= 2, 'close_banner 得是能念的短语，不是空串');
+  assert.doesNotMatch(nav, /aria-label="[^"<]*关闭|关闭提示"[^>]*data-dismiss/, '按钮的可访问名必须走数据，不得硬写在模板里');
+  // 结构：文字与徽章包在 .alpha-body 里，按钮是 .alpha 的直接子元素且排在其后（§2 段 1「右侧可关」）
+  const alpha = divBlocks(nav, 'alpha')[0];
+  assert.ok(alpha, 'nav.ejs 里切不出 .alpha 容器');
+  const body = divBlocks(alpha.block, 'alpha-body')[0];
+  assert.ok(body, '.alpha 里缺 .alpha-body：文字与徽章要在同一个可换行的 flex 子项里，否则窄屏把按钮挤走');
+  assert.equal([...alpha.block.matchAll(/<button\b/g)].length, 1, '.alpha 里必须恰好一枚按钮（关闭）');
+  const at = alpha.block.indexOf('<button');
+  assert.ok(at > body.index + body.block.length,
+    '关闭按钮必须是 .alpha 的直接子元素、且在 .alpha-body 之后：塞进 body 就跟文字一起换行，落在左侧');
+  // 属性级判据读**产物**而不是模板：模板里 `aria-label="<%= … %>"` 的 `%>` 自带一个 `>`，
+  // 用 `/<button[^>]*>/` 切模板会把标签切在 EJS 中间（data-dismiss-alpha 落在切片外 → 假红）。
+  // 产物里是真 HTML，浏览器看到的形态与判据读到的形态同源。
+  const s = html('index.html');
+  const slice = s.slice(s.indexOf('class="alpha"'), s.indexOf('<header class="nav"'));
+  const tags = [...slice.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
+  assert.equal(tags.length, 1, '产物 .alpha 里必须恰好一枚按钮');
+  assert.match(tags[0], /\btype="button"/,
+    '必须是 type="button"（T8 :893 钉复制按钮的同族：将来被 form 包住也不会变 submit）');
+  assert.match(tags[0], /\bdata-dismiss-alpha\b/, '脚本认的钩子是 data-dismiss-alpha，且必须在按钮上');
+  assert.match(tags[0], new RegExp(`aria-label="${esc(copy.labels.close_banner)}"`),
+    '产物里按钮的 aria-label 必须逐字等于 copy.labels.close_banner');
+  assert.match(slice, /class="alpha-text"/, '横幅文字必须由 .alpha-text 承载（flex 子项，换行才归 .alpha-body 管）');
+});
+
+test('T10 CSS 门：.alpha 留白仍只有一条来源，flex 覆写排在它之后，[hidden] 真能收起来', () => {
+  const css = readCss();
+  // 先剥注释再扫（:78 与 appendixRules:591 的同族纪律）：本文件 :239-243 的理由注释里
+  // 就原样写着 `.nav{top:12px}`、`.alpha` 这类片段，不剥就是拿注释顶替真规则。
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  // 只取**页面级** .alpha 规则：`.alpha .pill`（后代）与 `.alpha-x`（连字符）都不算，
+  // 所以 `\.alpha` 后面只允许 `[attr]` 或 `{`。
+  const rules = [...bare.matchAll(/(^|[^-\w.])\.alpha(\[[^\]]*\])?\{([^}]*)\}/g)]
+    .map((m) => ({ sel: `.alpha${m[2] || ''}`, decls: m[3] }));
+  assert.ok(rules.length >= 2,
+    `页面级 .alpha 规则至少两条（T4 的留白 + T10 的 flex 覆写），现在 ${rules.length} 条`);
+  const has = (decls, prop) => new RegExp(`(?:^|[;\\s])${prop}\\s*:`, 'i').test(decls.replace(/\s+/g, ' '));
+  assert.equal(rules[0].sel, '.alpha', '第一条页面级 .alpha 必须是无属性选择器的那条');
+  assert.ok(has(rules[0].decls, 'padding') || has(rules[0].decls, 'padding-top'),
+    '第一条 .alpha 必须带顶部留白：:82 的首屏几何判据读的就是**第一条** `.alpha{…}`，'
+    + '把带留白的那条挤到后面 = 几何判据改读一条没有 padding 的规则，当场红');
+  for (const r of rules.slice(1)) {
+    for (const p of ['padding', 'background', 'color']) {
+      assert.ok(!has(r.decls, p),
+        `后加的 ${r.sel} 又 declare 了 ${p}：留白 / 底色 / 文字色只能有 :244 那一个来源`
+        + '（§6-5 的几何判据与 T4 的视觉基准都挂在它身上）');
+    }
+  }
+  assert.ok(rules.some((r) => r.sel === '.alpha' && /display\s*:\s*flex/.test(r.decls)),
+    '缺 .alpha{display:flex}：文字块与关闭按钮排不进同一行（§2 段 1 的「右侧可关」）');
+  // 这条是**实测**加进来的，不是风格洁癖：author 级的 display:flex 会盖掉 UA 的 [hidden]{display:none}
+  // （author 原点在 cascade 里高于 UA，与特异性无关），于是 main.js 的 banner.hidden=true 画面上什么都不发生。
+  // 取证见 task-10-report.md 的「不加这条规则」变异：CDP 实测横幅 rect 与 computed display 均不变。
+  assert.ok(rules.some((r) => r.sel === '.alpha[hidden]' && /display\s*:\s*none/.test(r.decls)),
+    '缺 .alpha[hidden]{display:none}：.alpha 一旦 display:flex，UA 的 [hidden] 就不再隐藏它 —— '
+    + '点关闭按钮等于没反应（§2 段 1 的「可关」变哑，而静态判据全绿）');
+});

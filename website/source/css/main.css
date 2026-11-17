@@ -245,6 +245,23 @@ section{scroll-margin-top:96px}
   padding:calc(var(--space-3) + 70px) var(--space-6) var(--space-3);
   text-align:center;border-bottom:1px solid var(--primary-100)}
 .alpha .pill{margin-left:var(--space-2);vertical-align:middle}
+/* T10 §2 段 1「右侧可关」：横幅排成「文字块 + 关闭按钮」一行（.alpha-x 只用 --primary-*，印章红禁入 §0-4）。
+   三条纪律：① 本块必须排在 :244 那条**之后**，且刻意不写 padding / background / color —— 留白、底色、
+   文字色只许有 :244 一个来源，§6-5 的首屏几何判据（honesty.test.mjs:82）读的就是它找到的**第一条**
+   `.alpha{…}`，把带留白的那条挤到后面等于让几何判据去量一条没有 padding 的规则（判据本身由 T10 CSS 门钉住）。
+   ② brief 里的 position:relative 未加：本页没有任何 .alpha 后代需要绝对定位，实测加与不加
+   `.alpha` / `.alpha-body` / `.alpha-text` / `.pill` / `.alpha-x` 五个 rect 逐值不变（task-10-report.md），
+   按本文件 `.shot-frame img{max-height:none}`（:277）与 T8 的 position:static 先例，空转声明不 ship。
+   ③ `.alpha[hidden]{display:none}` 是**必须**的：author 级 display:flex 在 cascade 里赢过 UA 的
+   [hidden]{display:none}（原点优先于特异性），少了它 main.js 的 banner.hidden=true 画面上什么都不发生 ——
+   实测见报告的变异条「删掉这条规则后关闭按钮点不动」。 */
+.alpha{display:flex;align-items:flex-start;justify-content:center;gap:var(--space-3)}
+.alpha[hidden]{display:none}
+.alpha-body{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;justify-content:center}
+.alpha-x{flex:none;border:0;background:transparent;color:var(--primary-600);cursor:pointer;
+  font-size:18px;line-height:1;padding:0 var(--space-2);border-radius:var(--radius-md)}
+.alpha-x:hover{background:var(--primary-100)}
+.alpha-x:focus-visible{outline:2px solid var(--primary-600);outline-offset:2px}
 /* 卡右上角状态徽章：复用 §5.7 pill，不新立字号 */
 .feat-card{position:relative}
 .feat-card>.pill.badge{position:absolute;top:var(--space-5);right:var(--space-5)}

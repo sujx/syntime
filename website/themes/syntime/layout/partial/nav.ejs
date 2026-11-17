@@ -1,6 +1,15 @@
 <% const C = site.data.copy; %>
+<%# 段 1 ALPHA 横幅（设计方案 §2 段 1「右侧可关，仅本次会话」）：文字与徽章包进 .alpha-body，
+    关闭按钮是 .alpha 的直接子元素且排在其后 —— 塞进 body 就会跟文字一起换行到左侧。
+    可访问名取 labels.close_banner（触屏无 hover，故不写 title）；显隐只走 hidden，
+    配套的 .alpha[hidden]{display:none} 是必须的（display:flex 会盖掉 UA 的 [hidden]），
+    判据在 tests/honesty.test.mjs 的 T10 CSS 门。 %>
 <div class="alpha" role="note">
-  <%= C.alpha_banner.text %><%- partial('partial/badge', {badge: C.alpha_banner.badge}) %>
+  <div class="alpha-body">
+    <span class="alpha-text"><%= C.alpha_banner.text %></span>
+    <%- partial('partial/badge', {badge: C.alpha_banner.badge}) %>
+  </div>
+  <button class="alpha-x" type="button" aria-label="<%= C.labels.close_banner %>" data-dismiss-alpha>&times;</button>
 </div>
 <header class="nav">
   <div class="nav-inner wrap">
