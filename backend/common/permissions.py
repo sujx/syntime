@@ -76,14 +76,20 @@ class IsCostAdmin(BasePermission):
         return get_role(request.user) == ROLE_COST_ADMIN
 
 
-class IsEventOperator(BasePermission):
-    """接口级权限：事件状态流转限成本管理员与云运维（api.md 接口13）。
+class IsCostAdminOrOps(BasePermission):
+    """接口级权限：仅成本管理员与云运维（PRD 3.14-7 成本治理页 / 4.2 权限矩阵）。
 
-    财务角色只读，越权→``PermissionDenied``→40300；无角色用户同样拒绝。
-    未登录仍由前置 ``IsAuthenticated`` 拦为 40100。
+    越权由 DRF ``PermissionDenied`` 经统一异常处理映射为 40300（HTTP 200）；
+    未登录仍由前置 ``IsAuthenticated`` 拦为 40100，故此处只判角色。
     """
 
-    message = "仅成本管理员与云运维可执行该操作"
+    message = "仅成本管理员与云运维可访问该资源"
 
     def has_permission(self, request: Request, view: object) -> bool:
         return get_role(request.user) in (ROLE_COST_ADMIN, ROLE_OPS)
+
+
+class IsEventOperator(IsCostAdminOrOps):
+    """接口级权限：事件状态流转（api.md 接口13）——角色集合同上，只换动作语气的报错文案。"""
+
+    message = "仅成本管理员与云运维可执行该操作"

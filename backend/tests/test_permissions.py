@@ -8,6 +8,8 @@ from common.permissions import (
     ROLE_COST_ADMIN,
     ROLE_FINANCE,
     ROLE_OPS,
+    IsCostAdminOrOps,
+    IsEventOperator,
     RoleMaskedSerializerMixin,
     get_role,
 )
@@ -76,3 +78,25 @@ def test_get_role_no_group(db):
 def test_serializer_without_request_context():
     serializer = DetailSerializer(DATA)
     assert serializer.data["instance_id"] == "i-123"
+
+
+def test_is_cost_admin_or_roles_predicate(db, _user_in_group) -> None:
+    """接口级角色门：成本管理员与云运维放行，财务与无角色拒绝（PRD 3.14-7 / 4.2）。"""
+    permission = IsCostAdminOrOps()
+    for role, allowed in ((ROLE_COST_ADMIN, True), (ROLE_OPS, True), (ROLE_FINANCE, False)):
+        request = SimpleNamespace(user=_user_in_group(role))
+        ok = permission.has_permission(request, None)  # type: ignore[arg-type]
+        assert ok is allowed
+    anonymous = SimpleNamespace(user=None)
+    assert permission.has_permission(anonymous, None) is False  # type: ignore[arg-type]
+
+
+def test_event_operator_permission_unchanged_by_inheritance(db, _user_in_group) -> None:
+    """`IsEventOperator` 改为继承 `IsCostAdminOrOps` 后，逐角色判定必须与父类完全一致。"""
+    parent, child = IsCostAdminOrOps(), IsEventOperator()
+    for role in (ROLE_COST_ADMIN, ROLE_OPS, ROLE_FINANCE):
+        request = SimpleNamespace(user=_user_in_group(role))
+        parent_ok = parent.has_permission(request, None)  # type: ignore[arg-type]
+        child_ok = child.has_permission(request, None)  # type: ignore[arg-type]
+        assert parent_ok == child_ok
+    assert child.message != parent.message  # 只换报错文案，不改判定
