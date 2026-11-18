@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.assets.idle_rules import (
@@ -332,3 +334,81 @@ def test_sort_is_total_so_null_bucket_cannot_shuffle_across_pages(account: Cloud
     for order in ("asc", "desc"):
         out = [r.asset.pk for r in _sort_rows(scrambled, IdleQueryFilters(sort_order=order))]
         assert out == expected, order
+
+
+@pytest.mark.django_db
+def test_account_name_resolved_without_joining_account_per_row(account: CloudAccount) -> None:
+    """候选扫描**不 JOIN** 账号表，归属账号名另由一次独立读取解析（规格 §8.1 方案 5）。
+
+    5 万行实测里 `select_related("cloud_account")` 把账号表的列复制到 40012 行候选上，
+    仅去掉这一 JOIN 就省 **662ms**（1911→1249，规格 §8.1「瓶颈定位」对照③）。耗时不进
+    pytest（D12 口径：一次性脚本实测），但 JOIN 一旦被加回来，`" JOIN "` 断言必然当场红。
+    """
+    _make(
+        account,
+        instance_id="i-no-join",
+        status=CloudAsset.Status.STOPPED,
+        status_changed_at=timezone.now() - timedelta(days=20),
+    )
+    with CaptureQueriesContext(connection) as ctx:
+        rows = list_idle_assets(IdleQueryFilters())
+    assert [r.account_name for r in rows] == ["acc1"]  # 降本不得改变结果
+    assert [q["sql"] for q in ctx.captured_queries if " JOIN " in q["sql"]] == []
+
+
+@pytest.mark.django_db
+def test_account_name_three_states_survive_the_dict_read(account: CloudAccount) -> None:
+    """去 JOIN 后归属解析三态不变：有账号取名、账号为空取 None、域名恒取注册商。
+
+    第三态是 PRD 3.14-2 的产品规则本身，此前只写在 `_account_name` 的 docstring 里、没有
+    用例覆盖「域名行**挂了**账号」这一组合——字典化改造最容易在这里把注册商读丢。
+    """
+    owned = _make(
+        account, resource_type="eip", instance_id="eip-owned", status=CloudAsset.Status.UNBOUND
+    )
+    orphan = _make(
+        None, resource_type="eip", instance_id="eip-orphan", status=CloudAsset.Status.UNBOUND
+    )
+    domain = _make(
+        account,
+        resource_type="domain",
+        instance_id="d.test",
+        status=CloudAsset.Status.EXPIRING,
+        expire_time=timezone.now() + timedelta(days=7),
+        registrar="注册商甲",
+    )
+    names = {r.asset.pk: r.account_name for r in list_idle_assets(IdleQueryFilters())}
+    assert names == {owned.pk: "acc1", orphan.pk: None, domain.pk: "注册商甲"}
+
+
+@pytest.mark.django_db
+def test_account_names_are_read_once_not_per_row(account: CloudAccount) -> None:
+    """命中行跨 3 个账号共 9 行时，提到 `cloud_account` 的语句仍只有 **1 条**。
+
+    这条钉的是另一种「去 JOIN 但逐行 `asset.cloud_account`」的实现形态：那时 SQL 里没有
+    JOIN、上一条测试全绿，代价变成每行一条懒加载查询。
+    """
+    accounts = [account]
+    for i in (2, 3):
+        accounts.append(
+            CloudAccount.objects.create(
+                vendor="tencent",
+                account_name=f"acc-{i}",
+                account_type="sub",
+                ak_cipher="x",
+                sk_cipher="y",
+            )
+        )
+    for n in range(9):
+        _make(
+            accounts[n % 3],
+            resource_type="eip",
+            instance_id=f"eip-{n}",
+            status=CloudAsset.Status.UNBOUND,
+        )
+    with CaptureQueriesContext(connection) as ctx:
+        rows = list_idle_assets(IdleQueryFilters())
+    assert len(rows) == 9
+    assert {r.account_name for r in rows} == {"acc1", "acc-2", "acc-3"}
+    account_queries = [q["sql"] for q in ctx.captured_queries if '"cloud_account"' in q["sql"]]
+    assert len(account_queries) == 1

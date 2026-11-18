@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import cast
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
@@ -51,14 +50,26 @@ class IdleRow:
     account_name: str | None
 
 
-def _account_name(asset: CloudAsset) -> str | None:
+def _account_names(assets: list[CloudAsset]) -> dict[int, str]:
+    """候选行引用到的账号名，一次读成 `{pk: account_name}`（规格 §8.1 方案 5）。
+
+    读在候选快照**之后**：`on_delete=RESTRICT` 下被引用的账号删不掉，故这次读取必然覆盖
+    快照里出现过的每个 `cloud_account_id`；反过来先读字典再扫资产才会漏掉其间新建的账号。
+    """
+    ids = {asset.cloud_account_id for asset in assets if asset.cloud_account_id is not None}
+    if not ids:
+        return {}
+    return dict(CloudAccount.objects.filter(pk__in=ids).values_list("id", "account_name"))
+
+
+def _account_name(asset: CloudAsset, names: dict[int, str]) -> str | None:
     """归属账号：域名取注册商，其余取云账号名（PRD 3.14-2）。"""
     if asset.resource_type == _DOMAIN:
         return asset.registrar
     if asset.cloud_account_id is None:
         return None
-    # 非空 id 在 `on_delete=RESTRICT` 下必能解析到已 join 的账号行，故只做静态收窄、不加运行时兜底。
-    return cast(CloudAccount, asset.cloud_account).account_name
+    # 缺键意味着上面那条 RESTRICT 前提被破坏（账号被硬删），宁可 500 也不要静默显示成「无归属」。
+    return names[asset.cloud_account_id]
 
 
 def _candidate_queryset(filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
@@ -66,7 +77,7 @@ def _candidate_queryset(filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
     qs = CloudAsset.objects.filter(
         released_at__isnull=True,
         status__in=list(IDLE_CANDIDATE_STATUSES),
-    ).select_related("cloud_account")
+    )
     if filters.resource_type:
         qs = qs.filter(resource_type=filters.resource_type)
     if filters.cloud_account_id is not None:
@@ -109,14 +120,16 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
     """
     config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
     now: datetime = timezone.now()
+    assets = list(_candidate_queryset(filters))
+    names = _account_names(assets)
     rows: list[IdleRow] = []
-    for asset in _candidate_queryset(filters):
+    for asset in assets:
         verdict = judge(asset, config, now)
         if verdict is None:
             continue
         if filters.idle_types and verdict.idle_type not in filters.idle_types:
             continue
-        rows.append(IdleRow(asset=asset, verdict=verdict, account_name=_account_name(asset)))
+        rows.append(IdleRow(asset=asset, verdict=verdict, account_name=_account_name(asset, names)))
     return _sort_rows(rows, filters)
 
 
