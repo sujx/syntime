@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import cast
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.assets.idle_rules import IDLE_CANDIDATE_STATUSES, IdleConfig, IdleVerdict, judge
 from apps.assets.models import CloudAsset
+from apps.billing.models import CloudAccount
 from common.readers import get_platform_setting
 
 # 可排序的模型字段（API 的 camelCase 已在序列化层映射过来）
@@ -55,7 +57,8 @@ def _account_name(asset: CloudAsset) -> str | None:
         return asset.registrar
     if asset.cloud_account_id is None:
         return None
-    return asset.cloud_account.account_name if asset.cloud_account else None
+    # 非空 id 在 `on_delete=RESTRICT` 下必能解析到已 join 的账号行，故只做静态收窄、不加运行时兜底。
+    return cast(CloudAccount, asset.cloud_account).account_name
 
 
 def _candidate_queryset(filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
@@ -86,6 +89,21 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
     """返回命中四判据的闲置清单，已按 `sort_field` / `sort_order` 排好、未分页。
 
     `idle_stopped_days` 每请求经 `get_platform_setting` 两级回退读取（spec US-4）。
+
+    两条 Task 3/4/6 要照单继承的既定口径：
+
+    - **归属优先级**：`resource_type == "domain"` 行的 `account_name` 取**注册商**
+      （PRD 3.14-2），这就是产品规则本身，故域名行即便挂了 `cloud_account` 也显示注册商。
+    - **次级键方向**：非空桶的 `pk` 跟随 `sort_order`（`desc` 即 `pk DESC`），
+      空值桶恒 `pk ASC`；`pk` 唯一，两个方向都是**严格全序**、跨调用稳定。
+
+    Args:
+        filters: 接口16 查询条件（已由序列化层校验）。`sort_field` 不在白名单时回退
+            `expire_time`；`idle_types` 为空表示不按闲置类型筛。
+
+    Returns:
+        命中判据的 `IdleRow` 列表（资产 + `judge` 结论 + 已解析的归属账号名），
+        已全量排序、未分页（分页交视图层 `ResultPaginator`）；无命中时为空列表。
     """
     config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
     now: datetime = timezone.now()

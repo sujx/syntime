@@ -8,11 +8,14 @@ import pytest
 from django.utils import timezone
 
 from apps.assets.idle_rules import (
+    IDLE_CANDIDATE_STATUSES,
     IDLE_DOMAIN_EXPIRED,
     IDLE_EIP_UNBOUND,
     IDLE_POSTPAID_STOPPED,
     IDLE_PREPAID_STOPPED,
+    IdleConfig,
     IdleVerdict,
+    judge,
 )
 from apps.assets.models import CloudAsset
 from apps.assets.selectors import IdleQueryFilters, IdleRow, _sort_rows, list_idle_assets
@@ -65,6 +68,7 @@ def test_four_criteria_each_present(account: CloudAccount) -> None:
     _make(account, instance_id="i-running")
 
     rows = list_idle_assets(IdleQueryFilters())
+    assert len(rows) == 4  # 四判据各一行：多一行即泄漏（如 3 天阈值边界行混进 ②）
     assert _types(rows) == {
         IDLE_PREPAID_STOPPED,
         IDLE_POSTPAID_STOPPED,
@@ -86,15 +90,18 @@ def test_released_asset_absent(account: CloudAccount) -> None:
 
 
 @pytest.mark.django_db
-def test_candidate_prefilter_is_lossless(account: CloudAccount) -> None:
+def test_candidate_prefilter_is_lossless() -> None:
     """必要条件预筛不得改变结果：预筛集合之外的状态永远判不出闲置。
 
     逐个状态跑一遍 `CloudAsset.Status`，凡是候选集合外的都必须返回 None——
     这是 §8-D12 那条「SQL 只下推必要条件」的等价性证明。
-    """
-    from apps.assets.idle_rules import IDLE_CANDIDATE_STATUSES, IdleConfig, judge
 
+    `probes` 是这条证明的**自证**：候选集合若扩到覆盖全部状态，循环体一次都不执行，
+    断言会空转变绿。故把实际探测的组合数钉死为 50 = (9 状态 - 4 候选) × 2 计费 × 5 类型；
+    状态枚举或候选集合任一侧变动，都必须同时改这个数字，否则本测试立刻失败。
+    """
     now = timezone.now()
+    probes = 0
     for status, *_ in CloudAsset.Status.choices:
         if status in {s.value if hasattr(s, "value") else s for s in IDLE_CANDIDATE_STATUSES}:
             continue
@@ -108,11 +115,13 @@ def test_candidate_prefilter_is_lossless(account: CloudAccount) -> None:
                     expire_time=now,
                     status_changed_at=now - timedelta(days=99),
                 )
+                probes += 1
                 assert judge(asset, IdleConfig(idle_stopped_days=1), now) is None, (
                     status,
                     charge_type,
                     resource_type,
                 )
+    assert probes == 50
 
 
 @pytest.mark.django_db
@@ -142,7 +151,7 @@ def test_column_filters_and_keyword(account: CloudAccount) -> None:
         region="cn-hangzhou",
         project_tag="项目A",
     )
-    _make(
+    domain = _make(
         None,
         resource_type="domain",
         instance_id="kw.test",
@@ -150,6 +159,18 @@ def test_column_filters_and_keyword(account: CloudAccount) -> None:
         status=CloudAsset.Status.EXPIRED,
         expire_time=now - timedelta(days=1),
         registrar="某注册商",
+        region=None,
+        project_tag=None,
+    )
+    # 名称与 ID 不同的行：让 keyword 的三列命中各自可归因（少一列 Q 就有一条断言红）
+    named = _make(
+        None,
+        resource_type="domain",
+        instance_id="only-id.test",
+        instance_name="仅名称可搜",
+        status=CloudAsset.Status.EXPIRED,
+        expire_time=now - timedelta(days=1),
+        registrar="另一家注册商",
         region=None,
         project_tag=None,
     )
@@ -161,9 +182,16 @@ def test_column_filters_and_keyword(account: CloudAccount) -> None:
         r.asset.pk for r in list_idle_assets(IdleQueryFilters(cloud_account_id=account.pk))
     ] == [eip.pk]
     assert list_idle_assets(IdleQueryFilters(resource_type="nat")) == []
-    # keyword 命中 instance_id / instance_name / 域名注册商三列
+    # keyword 命中 instance_id / instance_name / 域名注册商三列，逐个唯一归因
     assert [r.asset.pk for r in list_idle_assets(IdleQueryFilters(keyword="eip-"))] == [eip.pk]
-    assert len(list_idle_assets(IdleQueryFilters(keyword="某注册商"))) == 1
+    assert [r.asset.pk for r in list_idle_assets(IdleQueryFilters(keyword="仅名称可搜"))] == [
+        named.pk
+    ]
+    assert [r.asset.pk for r in list_idle_assets(IdleQueryFilters(keyword="某注册商"))] == [
+        domain.pk
+    ]
+    # 三列都不含的串必须搜不到（防「整行兜底匹配」把任何输入都判为命中）
+    assert list_idle_assets(IdleQueryFilters(keyword="zzz-三列皆无")) == []
 
 
 @pytest.mark.django_db
