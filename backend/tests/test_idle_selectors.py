@@ -246,6 +246,55 @@ def test_threshold_read_from_table_per_request(account: CloudAccount) -> None:
 
 
 @pytest.mark.django_db
+def test_stopped_since_fallback_hits_criterion_2_through_the_read_path(
+    account: CloudAccount,
+) -> None:
+    """D11 三级回退必须**穿过 DB 读路径**命中判据 ②（spec §8-D11 / 终审 IM-1）。
+
+    **这条在防什么（它存在的全部理由）**：防有人把「停机 ≥ N 天」的日阈值下推进 SQL——
+    即给 `_candidate_queryset` 加一条 `status_changed_at__lte=now - timedelta(days=N)`
+    当必要条件（正是 spec §8-D12「SQL 只下推必要条件、不复制判定口径」禁止的形态）。
+    只要那条下推按**当前阈值**取数（而不是把 14 写死），其余 353 条旧测试实测全绿，而它会
+    **静默丢掉所有停机起点来自回退的行**：这两行的 `status_changed_at` 在库里都是 NULL，
+    `stopped_since`（`idle_rules.py`）只能落到 `first_seen_at` / `create_time`，而按
+    `status_changed_at` 过滤的 SQL 谓词对 NULL 恒为假 ⇒ 行在进 `judge` 之前就被挡掉。
+    所以断言必须打在 `list_idle_assets` 上，而不是像
+    `tests/test_idle_rules.py::test_stopped_since_three_level_fallback` 那样只在未保存实例上
+    打口径层——后者挡不住这次下推。
+
+    这是活路径不是理论路径：`apps/assets/services.py` 的 `align_assets` 对状态未变的行
+    保留旧 `status_changed_at`（历史行为 NULL ⇒ 落到 `first_seen_at`）。
+    """
+    now = timezone.now()
+    # 回退第二级：status_changed_at 为空，靠 first_seen_at 拿到 20 天
+    by_first_seen = _make(
+        account,
+        charge_type="postpaid",
+        status=CloudAsset.Status.STOPPED,
+        status_changed_at=None,
+        first_seen_at=now - timedelta(days=20),
+    )
+    # 回退第三级：`create_time` 是 `auto_now_add`，insert 后只能用 queryset 改写；
+    # `status_changed_at` 与 `first_seen_at` 保持 NULL（`_make` 默认不写这两列），
+    # 否则判据 ② 会在前两级就取到值，第三级等于没测。
+    by_create_time = _make(account, charge_type="postpaid", status=CloudAsset.Status.STOPPED)
+    CloudAsset.objects.filter(pk=by_create_time.pk).update(create_time=now - timedelta(days=25))
+
+    rows = list_idle_assets(IdleQueryFilters())
+    by_pk = {r.asset.pk: r for r in rows}
+    assert set(by_pk) == {by_first_seen.pk, by_create_time.pk}  # 少一行即回退层级被 SQL 挡掉
+    assert list(
+        CloudAsset.objects.filter(pk__in=by_pk).values_list("status_changed_at", flat=True)
+    ) == [None, None]  # 命中的两行确实没有 status_changed_at 可用
+
+    for pk, stopped_days in ((by_first_seen.pk, 20), (by_create_time.pk, 25)):
+        verdict = by_pk[pk].verdict
+        assert verdict.idle_type == IDLE_POSTPAID_STOPPED
+        # thresholdDays=14：`platform_setting.idle_stopped_days` 的迁移种子值（见上面阈值测试）
+        assert verdict.key_metric == {"stoppedDays": stopped_days, "thresholdDays": 14}
+
+
+@pytest.mark.django_db
 def test_sort_is_total_so_null_bucket_cannot_shuffle_across_pages(account: CloudAccount) -> None:
     """排序必须是**全序**：候选集 SQL 不带 ORDER BY，空值桶若不显式按 `pk` 排就随物理扫描顺序漂，
     翻页时同一批行会换序（api.md 接口16「服务端全量排序」的前提）。
