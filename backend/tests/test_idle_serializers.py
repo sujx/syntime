@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 
 from apps.assets.idle_rules import IDLE_EIP_UNBOUND, IdleVerdict
 from apps.assets.models import CloudAsset
-from apps.assets.selectors import IdleQueryFilters, IdleRow
-from apps.assets.serializers import IdleQueryInputSerializer, IdleRowSerializer
+from apps.assets.selectors import _SORTABLE, IdleQueryFilters, IdleRow
+from apps.assets.serializers import _SORT_MAP, IdleQueryInputSerializer, IdleRowSerializer
 
 
 def _row(**overrides: object) -> IdleRow:
@@ -33,6 +33,12 @@ def test_input_defaults() -> None:
     serializer = IdleQueryInputSerializer(data={})
     assert serializer.is_valid(), serializer.errors
     assert serializer.to_filters() == IdleQueryFilters()
+    # 「传了但是空串」必须等同于「没传」：不归一则 selector 会拿 "" 做精确筛，结果恒空
+    blank = IdleQueryInputSerializer(
+        data={"resourceType": "", "region": "", "projectTag": "", "keyword": "", "sortField": ""}
+    )
+    assert blank.is_valid(), blank.errors
+    assert blank.to_filters() == IdleQueryFilters()
 
 
 def test_input_maps_camel_case() -> None:
@@ -67,6 +73,9 @@ def test_input_rejects_unknown_idle_type_and_sort_field() -> None:
     serializer = IdleQueryInputSerializer(data={"sortField": "drop table"})
     assert serializer.is_valid()
     assert serializer.to_filters().sort_field == "expire_time"
+    # 排序白名单有两份（本层 _SORT_MAP + selectors._SORTABLE），任一侧漂移都会静默回落默认排序，
+    # 这里把它钉成 1:1：键数必须等于白名单长度，值集合必须与 selectors 侧完全相同
+    assert set(_SORT_MAP.values()) == _SORTABLE and len(_SORT_MAP) == 6
 
 
 def test_row_output_camel_case_and_nulls() -> None:
