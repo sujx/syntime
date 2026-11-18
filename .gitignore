@@ -11,6 +11,9 @@ __pycache__/
 staticfiles/
 media/
 
+# 本机生产形态的进程日志（gunicorn / celery，见 backend/deploy_prod.sh）
+logs/
+
 # Celery beat 在当前目录写的调度状态库（默认名 celerybeat-schedule，实际落成 .db）
 celerybeat-schedule*
 
