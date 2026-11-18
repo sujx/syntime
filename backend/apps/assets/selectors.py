@@ -1,0 +1,115 @@
+"""闲置资源清单读路径（api.md 接口16；工程约定 §2：selectors 只做读）。
+
+判定口径不在本层：SQL 只下推**必要条件**（未释放 + 状态 ∈ `IDLE_CANDIDATE_STATUSES`，
+spec §8-D12）与纯列筛选，逐行判定一律交给 `idle_rules.judge`；`idleType` 过滤与排序在
+判定后于 Python 侧完成（api.md 接口16：排序服务端全量执行），分页交视图层 `ResultPaginator`。
+本层不感知角色。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from django.db.models import Q, QuerySet
+from django.utils import timezone
+
+from apps.assets.idle_rules import IDLE_CANDIDATE_STATUSES, IdleConfig, IdleVerdict, judge
+from apps.assets.models import CloudAsset
+from common.readers import get_platform_setting
+
+# 可排序的模型字段（API 的 camelCase 已在序列化层映射过来）
+_SORTABLE = frozenset(
+    {"instance_id", "resource_type", "status", "region", "project_tag", "expire_time"}
+)
+_DEFAULT_SORT = "expire_time"
+_DOMAIN = "domain"
+
+
+@dataclass(frozen=True)
+class IdleQueryFilters:
+    """接口16 查询条件（已由序列化层校验）。"""
+
+    idle_types: list[str] = field(default_factory=list)
+    resource_type: str | None = None
+    cloud_account_id: int | None = None
+    region: str | None = None
+    project_tag: str | None = None
+    keyword: str | None = None
+    sort_field: str = _DEFAULT_SORT
+    sort_order: str = "asc"
+
+
+@dataclass(frozen=True)
+class IdleRow:
+    """一行清单 = 资产 + 判定结论 + 已解析的归属账号名。"""
+
+    asset: CloudAsset
+    verdict: IdleVerdict
+    account_name: str | None
+
+
+def _account_name(asset: CloudAsset) -> str | None:
+    """归属账号：域名取注册商，其余取云账号名（PRD 3.14-2）。"""
+    if asset.resource_type == _DOMAIN:
+        return asset.registrar
+    if asset.cloud_account_id is None:
+        return None
+    return asset.cloud_account.account_name if asset.cloud_account else None
+
+
+def _candidate_queryset(filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
+    """候选集：必要条件预筛（不改变结果，见 test_candidate_prefilter_is_lossless）+ 纯列筛选。"""
+    qs = CloudAsset.objects.filter(
+        released_at__isnull=True,
+        status__in=list(IDLE_CANDIDATE_STATUSES),
+    ).select_related("cloud_account")
+    if filters.resource_type:
+        qs = qs.filter(resource_type=filters.resource_type)
+    if filters.cloud_account_id is not None:
+        qs = qs.filter(cloud_account_id=filters.cloud_account_id)
+    if filters.region:
+        qs = qs.filter(region=filters.region)
+    if filters.project_tag:
+        qs = qs.filter(project_tag=filters.project_tag)
+    if filters.keyword:
+        kw = filters.keyword
+        qs = qs.filter(
+            Q(instance_id__icontains=kw)
+            | Q(instance_name__icontains=kw)
+            | Q(registrar__icontains=kw)
+        )
+    return qs
+
+
+def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
+    """返回命中四判据的闲置清单，已按 `sort_field` / `sort_order` 排好、未分页。
+
+    `idle_stopped_days` 每请求经 `get_platform_setting` 两级回退读取（spec US-4）。
+    """
+    config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
+    now: datetime = timezone.now()
+    rows: list[IdleRow] = []
+    for asset in _candidate_queryset(filters):
+        verdict = judge(asset, config, now)
+        if verdict is None:
+            continue
+        if filters.idle_types and verdict.idle_type not in filters.idle_types:
+            continue
+        rows.append(IdleRow(asset=asset, verdict=verdict, account_name=_account_name(asset)))
+    return _sort_rows(rows, filters)
+
+
+def _sort_rows(rows: list[IdleRow], filters: IdleQueryFilters) -> list[IdleRow]:
+    """服务端全量排序：空值恒排最后（不随升降序翻转），`pk` 作稳定次级键免翻页跳动。
+
+    排序必须是**全序**：候选集 SQL 不带 ORDER BY，空值桶若沿用扫描顺序，同一批行在翻页时
+    会随物理顺序漂动，故空值桶也显式按 `pk` 升序收口。
+    """
+    name = filters.sort_field if filters.sort_field in _SORTABLE else _DEFAULT_SORT
+    reverse = filters.sort_order == "desc"
+    present = [row for row in rows if getattr(row.asset, name) is not None]
+    missing = [row for row in rows if getattr(row.asset, name) is None]
+    present.sort(key=lambda row: (getattr(row.asset, name), row.asset.pk or 0), reverse=reverse)
+    missing.sort(key=lambda row: row.asset.pk or 0)
+    return present + missing
