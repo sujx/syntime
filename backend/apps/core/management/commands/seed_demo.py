@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import cast
 
 from django.core.management.base import BaseCommand
 from django.db.models import Q
@@ -201,12 +200,18 @@ class Command(BaseCommand):
         now = timezone.now()
         acc = accounts[0]
 
-        def upsert(instance_id: str, **fields: object) -> None:
-            # 只有 FK 查找键要收窄类型（django-stubs 不接受 `object`），其余查找它按 Any 放行
-            account = cast(CloudAccount | None, fields.pop("cloud_account", acc))
+        def upsert(
+            instance_id: str,
+            resource_type: str,
+            *,
+            cloud_account: CloudAccount | None = acc,
+            **fields: object,
+        ) -> None:
+            # FK 查找键用显式形参收窄类型（django-stubs 不接受 `object`），其余字段按 Any 放行；
+            # 省略 cloud_account ⇒ 挂到 accounts[0]，域名行显式传 None（uk_asset 允许 NULL）。
             CloudAsset.objects.update_or_create(
-                cloud_account=account,
-                resource_type=fields.pop("resource_type"),
+                cloud_account=cloud_account,
+                resource_type=resource_type,
                 instance_id=instance_id,
                 defaults=fields,
             )

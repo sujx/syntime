@@ -13,7 +13,7 @@ from typing import Any
 from rest_framework import serializers
 
 from apps.assets.idle_rules import IDLE_TYPES
-from apps.assets.selectors import _DEFAULT_SORT, IdleQueryFilters, IdleRow
+from apps.assets.selectors import DEFAULT_SORT_FIELD, IdleQueryFilters, IdleRow
 
 # API 排序字段（camelCase）→ 模型字段名（与 selectors._SORTABLE 一一对应）
 _SORT_MAP = {
@@ -49,7 +49,7 @@ class IdleQueryInputSerializer(serializers.Serializer):
             region=d.get("region") or None,
             project_tag=d.get("projectTag") or None,
             keyword=d.get("keyword") or None,
-            sort_field=_SORT_MAP.get(d.get("sortField") or "", _DEFAULT_SORT),
+            sort_field=_SORT_MAP.get(d.get("sortField") or "", DEFAULT_SORT_FIELD),
             sort_order=d.get("sortOrder") or "asc",
         )
 

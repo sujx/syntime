@@ -24,7 +24,7 @@ from common.readers import get_platform_setting
 _SORTABLE = frozenset(
     {"instance_id", "resource_type", "status", "region", "project_tag", "expire_time"}
 )
-_DEFAULT_SORT = "expire_time"
+DEFAULT_SORT_FIELD = "expire_time"
 _DOMAIN = "domain"
 
 
@@ -38,7 +38,7 @@ class IdleQueryFilters:
     region: str | None = None
     project_tag: str | None = None
     keyword: str | None = None
-    sort_field: str = _DEFAULT_SORT
+    sort_field: str = DEFAULT_SORT_FIELD
     sort_order: str = "asc"
 
 
@@ -94,8 +94,10 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
 
     - **归属优先级**：`resource_type == "domain"` 行的 `account_name` 取**注册商**
       （PRD 3.14-2），这就是产品规则本身，故域名行即便挂了 `cloud_account` 也显示注册商。
-    - **次级键方向**：非空桶的 `pk` 跟随 `sort_order`（`desc` 即 `pk DESC`），
-      空值桶恒 `pk ASC`；`pk` 唯一，两个方向都是**严格全序**、跨调用稳定。
+    - **次级键方向**：非空桶的 `pk` 跟随 `sort_order`（`desc` 即 `pk DESC`），空值桶恒
+      `pk ASC`；对**已保存行**（`pk` 非空）`pk` 唯一，两个方向都是**严格全序**、跨调用稳定。
+      未保存行只可能来自手工构造的 `IdleRow`（本函数的读路径拿不到），其 `pk` 为 None ⇒
+      次级键恒等于 0，主键也相同时退回输入顺序，全序不成立。
 
     Args:
         filters: 接口16 查询条件（已由序列化层校验）。`sort_field` 不在白名单时回退
@@ -122,9 +124,12 @@ def _sort_rows(rows: list[IdleRow], filters: IdleQueryFilters) -> list[IdleRow]:
     """服务端全量排序：空值恒排最后（不随升降序翻转），`pk` 作稳定次级键免翻页跳动。
 
     排序必须是**全序**：候选集 SQL 不带 ORDER BY，空值桶若沿用扫描顺序，同一批行在翻页时
-    会随物理顺序漂动，故空值桶也显式按 `pk` 升序收口。
+    会随物理顺序漂动，故空值桶也显式按 `pk` 升序收口。这一收口的前提是**已保存行**（`pk`
+    非空）：次级键写作 `row.asset.pk or 0`，未保存行的 `pk` 为 None ⇒ 全部落到 0，主键也相同
+    时只能退回输入顺序。生产读路径（`list_idle_assets`）只会喂已保存行，未保存行仅出现在
+    手工构造 `IdleRow` 的测试里。
     """
-    name = filters.sort_field if filters.sort_field in _SORTABLE else _DEFAULT_SORT
+    name = filters.sort_field if filters.sort_field in _SORTABLE else DEFAULT_SORT_FIELD
     reverse = filters.sort_order == "desc"
     present = [row for row in rows if getattr(row.asset, name) is not None]
     missing = [row for row in rows if getattr(row.asset, name) is None]
