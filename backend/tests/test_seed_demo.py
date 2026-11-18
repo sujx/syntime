@@ -73,3 +73,61 @@ class SeedDemoTests(TestCase):
         )
         self._run()
         self.assertEqual(CloudAccount.objects.filter(account_name="prod-main").count(), 1)
+
+    def test_idle_seed_covers_all_four_criteria(self):
+        """D13：种子数据必须让四判据各能命中，且「停机不足 N 天」的行不出现。
+
+        走真实读路径（selector），不是只看行数——种子改了 `TYPES` 后这是唯一能证明
+        「闲置清单页有数据可看」的自动化检查。
+        """
+        from apps.assets.idle_rules import (
+            IDLE_DOMAIN_EXPIRED,
+            IDLE_EIP_UNBOUND,
+            IDLE_POSTPAID_STOPPED,
+            IDLE_PREPAID_STOPPED,
+        )
+        from apps.assets.selectors import IdleQueryFilters, list_idle_assets
+
+        self._run()
+        rows = list_idle_assets(IdleQueryFilters())
+        self.assertEqual(
+            {r.verdict.idle_type for r in rows},
+            {IDLE_PREPAID_STOPPED, IDLE_POSTPAID_STOPPED, IDLE_EIP_UNBOUND, IDLE_DOMAIN_EXPIRED},
+        )
+        ids = {r.asset.instance_id for r in rows}
+        self.assertIn("seed-postpaid-long", ids)
+        self.assertNotIn("seed-postpaid-short", ids)
+
+    def test_seed_assets_have_timestamps(self):
+        """D11 的前提：种子里的停机行必须带 `status_changed_at` 或 `first_seen_at`。"""
+        from apps.assets.models import CloudAsset
+
+        self._run()
+        self.assertEqual(
+            CloudAsset.objects.filter(
+                status_changed_at__isnull=True, first_seen_at__isnull=True
+            ).count(),
+            0,
+        )
+
+    def test_seed_domains_are_reseeded_not_duplicated(self):
+        """`_clean` 必须覆盖无账号的种子域名：二跑不重复，且清掉上一版遗留的孤儿行。
+
+        **不用 pk 断言**——`_clean` 先删后种，账号行的 pk 每次重种都在变（`seed_demo.py:79`
+        + `:175` 今天就是这个行为），域名行保持 pk 不是需求。真正要钉的是「无重复」与
+        「孤儿被清」：先插入一条本版不再写的 `seed-domain-orphan`，3d 缺失时它会活到二跑之后。
+        """
+        from apps.assets.models import CloudAsset
+
+        self._run()
+        CloudAsset.objects.create(
+            cloud_account=None,
+            resource_type="domain",
+            instance_id="seed-domain-orphan",
+            instance_name="上一版遗留的域名（重种应清掉）",
+        )
+        self._run()
+        self.assertEqual(
+            CloudAsset.objects.filter(instance_id__startswith="seed-domain").count(), 2
+        )
+        self.assertFalse(CloudAsset.objects.filter(instance_id="seed-domain-orphan").exists())

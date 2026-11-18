@@ -1,15 +1,18 @@
 """开发演示种子数据（仅 dev 使用，幂等：先清后种）。
 
 清理标记：云账号 (aliyun/prod-main)、(aliyun/prod-edge) 及其关联账单/资产/事件/预算
-（预算键固定集 PROJECTS）与本命令自身写下的聚合审计行。种完后调用 ``aggregate_daily``
-覆盖写近 35 天聚合，并补一条 aggregate 成功审计——仪表盘「最近聚合完成时间」以审计
-为唯一来源，而真实写入方是聚合任务（``cost.tasks``），种子走服务函数不产生审计。
+（预算键固定集 PROJECTS），``instance_id`` 以 ``seed-`` 开头且无归属云账号的资产（域名——
+按账号 id 的那条删除覆盖不到它们，不清就成了永久孤儿行），以及本命令自身写下的聚合审计行。
+种完后调用 ``aggregate_daily`` 覆盖写近 35 天聚合，并补一条 aggregate 成功审计——仪表盘
+「最近聚合完成时间」以审计为唯一来源，而真实写入方是聚合任务（``cost.tasks``），种子走
+服务函数不产生审计。
 """
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import cast
 
 from django.core.management.base import BaseCommand
 from django.db.models import Q
@@ -28,10 +31,10 @@ VENDOR = "aliyun"
 ACCOUNTS: list[tuple[str, str]] = [("prod-main", "enabled"), ("prod-edge", "disabled")]
 REGIONS = ["cn-shanghai", "cn-beijing"]
 TYPES = [
-    ("ecs", "云服务器 ECS"),
+    ("ecs", "ECS 云服务器"),
     ("rds", "云数据库 RDS"),
-    ("slb", "负载均衡 SLB"),
-    ("oss", "对象存储 OSS"),
+    ("eip", "弹性公网 IP"),
+    ("nat", "NAT 网关"),
 ]
 PROJECTS = ["项目A", "项目B"]
 DAYS = 35
@@ -74,6 +77,10 @@ class Command(BaseCommand):
             Q(dedup_key__startswith="seed:") | Q(cloud_account_id__in=ids)
         ).delete()
         CloudAsset.objects.filter(cloud_account_id__in=ids).delete()
+        # 域名等无归属账号的种子行不在上面的 ids 里，按 instance_id 前缀单独清（只碰 seed-）
+        CloudAsset.objects.filter(
+            cloud_account__isnull=True, instance_id__startswith="seed-"
+        ).delete()
         CloudBillDetail.objects.filter(cloud_account_id__in=ids).delete()
         ProjectCostDaily.objects.filter(cloud_account_id__in=ids).delete()
         SyncLog.objects.filter(cloud_account_id__in=ids).delete()
@@ -106,6 +113,13 @@ class Command(BaseCommand):
         return out
 
     def _seed_dicts(self) -> None:
+        """补本命令用到的资源类型字典。
+
+        走 `get_or_create(code=...)` 是刻意选择：字典是运营可维护表，已有 code 的行不会被
+        本文件的中文名改名覆盖（`display_name` 只是新建时的默认值），历史种下的 `slb` / `oss`
+        行同样保留——删他人数据越界。
+        """
+        # 只补本命令用到的 code；历史种下的 slb/oss 行留在字典里不删（字典可运营维护）
         for i, (code, disp) in enumerate(TYPES):
             ResourceTypeDict.objects.get_or_create(
                 code=code, defaults={"display_name": disp, "sort_order": i}
@@ -154,6 +168,7 @@ class Command(BaseCommand):
         CloudBillDetail.objects.bulk_create(rows, batch_size=500)
 
     def _seed_assets(self, accounts: list[CloudAccount]) -> None:
+        now = timezone.now()
         for acc in accounts:
             for ti, (rt, _) in enumerate(TYPES):
                 for i in range(3):
@@ -170,10 +185,110 @@ class Command(BaseCommand):
                                 if (ti + i) % 4
                                 else CloudAsset.Status.STOPPED
                             ),
-                            "charge_type": "postpaid",
-                            "expire_time": timezone.now() + timedelta(days=20 + i * 100),
+                            # 两种计费方式都要有，否则 PRD 3.14-1 判据 ① 在演示库里恒空
+                            "charge_type": "prepaid" if (ti + i) % 3 == 0 else "postpaid",
+                            "expire_time": now + timedelta(days=20 + i * 100),
+                            # D11：闲置判定依赖停机起点，种子必须写出真实语义
+                            "first_seen_at": now - timedelta(days=DAYS),
+                            "last_seen_at": now,
+                            "status_changed_at": now - timedelta(days=1 if (ti + i) % 4 else 20),
                         },
                     )
+        self._seed_idle_assets(accounts)
+
+    def _seed_idle_assets(self, accounts: list[CloudAccount]) -> None:
+        """四判据各造一行可命中样例 + 一行「停机不足阈值」反例（D13 / F063）。"""
+        now = timezone.now()
+        acc = accounts[0]
+
+        def upsert(instance_id: str, **fields: object) -> None:
+            # 只有 FK 查找键要收窄类型（django-stubs 不接受 `object`），其余查找它按 Any 放行
+            account = cast(CloudAccount | None, fields.pop("cloud_account", acc))
+            CloudAsset.objects.update_or_create(
+                cloud_account=account,
+                resource_type=fields.pop("resource_type"),
+                instance_id=instance_id,
+                defaults=fields,
+            )
+
+        upsert(
+            "seed-prepaid-stopped",
+            resource_type="ecs",
+            instance_name="包年停机机（判据①）",
+            status=CloudAsset.Status.STOPPED,
+            charge_type="prepaid",
+            region=REGIONS[0],
+            project_tag=PROJECTS[0],
+            first_seen_at=now - timedelta(days=DAYS),
+            last_seen_at=now,
+            status_changed_at=now - timedelta(days=6),
+            expire_time=now + timedelta(days=200),
+        )
+        upsert(
+            "seed-postpaid-long",
+            resource_type="ecs",
+            instance_name="按量停机 21 天（判据②）",
+            status=CloudAsset.Status.STOPPED,
+            charge_type="postpaid",
+            region=REGIONS[1],
+            project_tag=PROJECTS[1],
+            first_seen_at=now - timedelta(days=DAYS),
+            last_seen_at=now,
+            status_changed_at=now - timedelta(days=21),
+        )
+        upsert(
+            "seed-postpaid-short",
+            resource_type="ecs",
+            instance_name="按量停机 3 天（阈值内，不应出现在闲置清单）",
+            status=CloudAsset.Status.STOPPED,
+            charge_type="postpaid",
+            region=REGIONS[0],
+            project_tag=PROJECTS[0],
+            first_seen_at=now - timedelta(days=DAYS),
+            last_seen_at=now,
+            status_changed_at=now - timedelta(days=3),
+        )
+        upsert(
+            "seed-eip-unbound",
+            resource_type="eip",
+            instance_name="未绑定 EIP（判据③）",
+            status=CloudAsset.Status.UNBOUND,
+            charge_type="postpaid",
+            region=REGIONS[1],
+            project_tag=PROJECTS[0],
+            first_seen_at=now - timedelta(days=DAYS),
+            last_seen_at=now,
+            status_changed_at=now - timedelta(days=9),
+        )
+        # 域名无云账号（uk_asset 的 cloud_account_id 为 NULL）；状态按 PRD 3.13-4 由到期日推导
+        upsert(
+            "seed-domain-expiring",
+            cloud_account=None,
+            resource_type="domain",
+            instance_name="syntime.test",
+            status=CloudAsset.Status.EXPIRING,
+            charge_type=None,
+            registrar="示例注册商",
+            project_tag=PROJECTS[1],
+            first_seen_at=now - timedelta(days=DAYS),
+            last_seen_at=now,
+            status_changed_at=now - timedelta(days=2),
+            expire_time=now + timedelta(days=12),
+        )
+        upsert(
+            "seed-domain-expired",
+            cloud_account=None,
+            resource_type="domain",
+            instance_name="old-syntime.test",
+            status=CloudAsset.Status.EXPIRED,
+            charge_type=None,
+            registrar="示例注册商",
+            project_tag=None,
+            first_seen_at=now - timedelta(days=DAYS),
+            last_seen_at=now,
+            status_changed_at=now - timedelta(days=10),
+            expire_time=now - timedelta(days=8),
+        )
 
     def _seed_budgets(self, today: date) -> None:
         months = {(today.replace(day=1)).strftime("%Y-%m")}
