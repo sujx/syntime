@@ -95,6 +95,9 @@ class SeedDemoTests(TestCase):
             {IDLE_PREPAID_STOPPED, IDLE_POSTPAID_STOPPED, IDLE_EIP_UNBOUND, IDLE_DOMAIN_EXPIRED},
         )
         ids = {r.asset.instance_id for r in rows}
+        # ①②各自点名：通用行里已经有 prepaid+stopped 与 postpaid+stopped，只断集合等于四类
+        # 时删掉 `seed-prepaid-stopped` 这行样例测试仍会绿，故两条 named-sample 断言不可省。
+        self.assertIn("seed-prepaid-stopped", ids)
         self.assertIn("seed-postpaid-long", ids)
         self.assertNotIn("seed-postpaid-short", ids)
 
@@ -113,9 +116,9 @@ class SeedDemoTests(TestCase):
     def test_seed_domains_are_reseeded_not_duplicated(self):
         """`_clean` 必须覆盖无账号的种子域名：二跑不重复，且清掉上一版遗留的孤儿行。
 
-        **不用 pk 断言**——`_clean` 先删后种，账号行的 pk 每次重种都在变（`seed_demo.py:79`
-        + `:175` 今天就是这个行为），域名行保持 pk 不是需求。真正要钉的是「无重复」与
-        「孤儿被清」：先插入一条本版不再写的 `seed-domain-orphan`，3d 缺失时它会活到二跑之后。
+        **不用 pk 断言**——`_clean` 先删后种，账号行每次重种都会拿到新 pk，域名行保持 pk
+        稳定不是需求。真正要钉的是「无重复」与「孤儿被清」：先插入一条本版不再写的
+        `seed-domain-orphan`，3d 缺失时它会活到二跑之后。
         """
         from apps.assets.models import CloudAsset
 
