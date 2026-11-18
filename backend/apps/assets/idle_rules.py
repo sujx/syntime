@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Protocol
 
 from django.utils import timezone
 
@@ -48,6 +49,40 @@ _EIP = "eip"
 _DOMAIN = "domain"
 
 
+class IdleSource(Protocol):
+    """`judge` 的输入契约：判据真正读到的那几列，命名与 `cloud_asset` 列同名。
+
+    判据不再声明成 `CloudAsset`——读路径按投影取数（规格 §8.1 方案 3），5 万行实测里不建
+    模型对象的投影取回 **624ms** vs 整行模型对象 **1911ms**，而判定口径仍只有 `judge` 一处
+    实现：**换的是数据形状，不是口径**。成员一律写成只读 `@property`，协议因此按协变匹配，
+    `CloudAsset`（`create_time` 由 `auto_now_add` 恒非空）与投影行（同列可为 NULL）都满足。
+    """
+
+    @property
+    def released_at(self) -> datetime | None: ...
+
+    @property
+    def charge_type(self) -> str | None: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def resource_type(self) -> str: ...
+
+    @property
+    def status_changed_at(self) -> datetime | None: ...
+
+    @property
+    def first_seen_at(self) -> datetime | None: ...
+
+    @property
+    def create_time(self) -> datetime | None: ...
+
+    @property
+    def expire_time(self) -> datetime | None: ...
+
+
 @dataclass(frozen=True)
 class IdleConfig:
     """判定输入配置。每请求从 `platform_setting` 读，改值无需重启（spec US-4）。"""
@@ -64,7 +99,7 @@ class IdleVerdict:
     key_metric: dict[str, int] = field(default_factory=dict)
 
 
-def stopped_since(asset: CloudAsset) -> datetime | None:
+def stopped_since(asset: IdleSource) -> datetime | None:
     """停机起点三级回退（spec §8-D11）：`status_changed_at` → `first_seen_at` → `create_time`。
 
     `align_assets` 与 `upsert_domain` 都写前两个；Admin 单条维护写不到它们——
@@ -82,11 +117,12 @@ def stopped_since(asset: CloudAsset) -> datetime | None:
     return asset.status_changed_at or asset.first_seen_at or asset.create_time
 
 
-def judge(asset: CloudAsset, config: IdleConfig, now: datetime) -> IdleVerdict | None:
+def judge(asset: IdleSource, config: IdleConfig, now: datetime) -> IdleVerdict | None:
     """按 PRD 3.14-1 四判据推导闲置结论，全不命中返回 None。
 
     Args:
-        asset: 待判资产（可以是未保存实例，便于纯口径测试）。
+        asset: 待判资产（`IdleSource`：未保存的 `CloudAsset` 实例与读路径的投影行都满足，
+            前者便于纯口径测试，后者是生产形状）。
         config: 阈值配置（`idle_stopped_days`）。
         now: 调用方注入的当前时刻（aware datetime）。
 

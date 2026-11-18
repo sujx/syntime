@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import timedelta
 
 import pytest
@@ -20,7 +21,14 @@ from apps.assets.idle_rules import (
     judge,
 )
 from apps.assets.models import CloudAsset
-from apps.assets.selectors import IdleQueryFilters, IdleRow, _sort_rows, list_idle_assets
+from apps.assets.selectors import (
+    _PROJECTION,
+    IdleCandidate,
+    IdleQueryFilters,
+    IdleRow,
+    _sort_rows,
+    list_idle_assets,
+)
 from apps.billing.models import CloudAccount
 from apps.core.models import PlatformSetting
 
@@ -412,3 +420,63 @@ def test_account_names_are_read_once_not_per_row(account: CloudAccount) -> None:
     assert {r.account_name for r in rows} == {"acc1", "acc-2", "acc-3"}
     account_queries = [q["sql"] for q in ctx.captured_queries if '"cloud_account"' in q["sql"]]
     assert len(account_queries) == 1
+
+
+@pytest.mark.django_db
+def test_read_path_yields_projection_rows_not_model_instances(account: CloudAccount) -> None:
+    """读路径取回的是**投影行**而非 `CloudAsset` 模型对象（规格 §8.1 方案 3）。
+
+    5 万行实测：同一候选集下不建模型对象的投影取回 **624ms** vs 整行模型对象 **1911ms**，
+    且这一降本在并发下同样成立——5 进程实测 P95 **3016 → 1772**，是本轮唯一过 2s 门槛的形状。
+    耗时不进 pytest（D12 口径），但形状一旦被改回整行取回，本条必然红：四判据/序列化/API 的
+    所有既有断言都是属性级的，模型对象与投影行都能满足，**唯有形状本身需要单独钉住**。
+    """
+    made = [
+        _make(
+            account,
+            instance_id=f"i-proj-{n}",
+            instance_name="投影名称",
+            region="cn-shanghai",
+            project_tag="投影项目",
+            resource_type="eip",
+            status=CloudAsset.Status.UNBOUND,
+        )
+        for n in range(2)
+    ]
+    rows = list_idle_assets(IdleQueryFilters(resource_type="eip"))
+    assert len(rows) == 2
+    assert not any(isinstance(row.asset, CloudAsset) for row in rows)
+    assert all(isinstance(row.asset, IdleCandidate) for row in rows)
+    # 形状换了，出参一个字段都不能变（序列化层与判据读的都是属性）
+    assert [(r.asset.pk, r.asset.instance_name, r.asset.region) for r in rows] == [
+        (m.pk, "投影名称", "cn-shanghai") for m in made
+    ]
+    assert [r.account_name for r in rows] == ["acc1", "acc1"]
+    assert {r.verdict.idle_type for r in rows} == {IDLE_EIP_UNBOUND}
+
+
+@pytest.mark.django_db
+def test_projection_columns_are_the_row_fields_in_order(account: CloudAccount) -> None:
+    """`_PROJECTION` 与 `IdleCandidate` 字段**同名同序**——投影是位置构造，错一列就串一列值。
+
+    `IdleCandidate(*t)` 按位置吃 `values_list` 的元组，列名与字段名之间没有编译器可查的绑定；
+    本条把这条绑定钉成测试，任何一侧单独改动都会红。域名归属用的 `registrar` 也在此列内
+    （PRD 3.14-2），漏掉它不会在别处报错，只会让 `account_name` 静默变 None。
+    """
+    assert _PROJECTION == tuple(f.name for f in fields(IdleCandidate))
+    assert set(_PROJECTION) >= {
+        "released_at",
+        "status_changed_at",
+        "first_seen_at",
+        "create_time",
+        "expire_time",
+        "charge_type",
+        "status",
+        "resource_type",
+        "instance_id",
+        "instance_name",
+        "region",
+        "project_tag",
+        "registrar",
+        "cloud_account_id",
+    }

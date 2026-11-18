@@ -4,17 +4,29 @@
 spec §8-D12）与纯列筛选，逐行判定一律交给 `idle_rules.judge`；`idleType` 过滤与排序在
 判定后于 Python 侧完成（api.md 接口16：排序服务端全量执行），分页交视图层 `ResultPaginator`。
 本层不感知角色。
+
+取数形状是 `_PROJECTION` 这 15 列的投影（spec §8.1 方案 3 + 方案 5），既不取整行也不 JOIN
+账号表：5 万行实测把这两步的代价量过（1911ms 整行 → 624ms 投影；其中去 JOIN 值 662ms），
+代价全部落在**客户端逐行取回**上，DB 侧执行只 22.8ms。
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Protocol
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from apps.assets.idle_rules import IDLE_CANDIDATE_STATUSES, IdleConfig, IdleVerdict, judge
+from apps.assets.idle_rules import (
+    IDLE_CANDIDATE_STATUSES,
+    IdleConfig,
+    IdleSource,
+    IdleVerdict,
+    judge,
+)
 from apps.assets.models import CloudAsset
 from apps.billing.models import CloudAccount
 from common.readers import get_platform_setting
@@ -41,16 +53,98 @@ class IdleQueryFilters:
     sort_order: str = "asc"
 
 
+# 投影列（规格 §8.1 方案 3）：`judge` 的输入契约 + 序列化层出参 + 归属解析 + 排序次级键的并集。
+# 与 `IdleCandidate` 的字段**同名同序**——行对象按位置构造，这条绑定由
+# tests/test_idle_selectors.py::test_projection_columns_are_the_row_fields_in_order 钉住。
+_PROJECTION: tuple[str, ...] = (
+    "id",
+    "released_at",
+    "status_changed_at",
+    "first_seen_at",
+    "create_time",
+    "expire_time",
+    "charge_type",
+    "status",
+    "resource_type",
+    "instance_id",
+    "instance_name",
+    "region",
+    "project_tag",
+    "registrar",
+    "cloud_account_id",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class IdleCandidate:
+    """一行候选：投影列的值，**不是** `CloudAsset` 对象。
+
+    取代整行取回的动机是实测，不是审美：5 万行同一候选集下，不建模型对象的投影 **624ms** vs
+    整行模型对象 **1911ms**；5 进程并发下 P95 **3016 → 1772**（规格 §8.1）。
+    `slots` 让 4 万个实例少一份 `__dict__`。`pk` 是 `CloudAsset` 侧的同名替身，供排序次级键
+    与既有用例使用（`id` 才是列名，见 `_PROJECTION`）。
+    """
+
+    id: int
+    released_at: datetime | None
+    status_changed_at: datetime | None
+    first_seen_at: datetime | None
+    create_time: datetime | None
+    expire_time: datetime | None
+    charge_type: str | None
+    status: str
+    resource_type: str
+    instance_id: str
+    instance_name: str | None
+    region: str | None
+    project_tag: str | None
+    registrar: str | None
+    cloud_account_id: int | None
+
+    @property
+    def pk(self) -> int:
+        return self.id
+
+
+class IdleListSource(IdleSource, Protocol):
+    """`IdleRow.asset` 的形状：判据所需（`IdleSource`）+ 出参、归属与排序次级键所需。
+
+    写成协议而非具体类，是因为两侧都要能满足：读路径给 `IdleCandidate`，测试与任何手工构造
+    的 `IdleRow` 给 `CloudAsset`（含未保存实例）。序列化层只按属性取值，两形同构。
+    """
+
+    @property
+    def pk(self) -> int: ...
+
+    @property
+    def instance_id(self) -> str: ...
+
+    @property
+    def instance_name(self) -> str | None: ...
+
+    @property
+    def region(self) -> str | None: ...
+
+    @property
+    def project_tag(self) -> str | None: ...
+
+    @property
+    def registrar(self) -> str | None: ...
+
+    @property
+    def cloud_account_id(self) -> int | None: ...
+
+
 @dataclass(frozen=True)
 class IdleRow:
-    """一行清单 = 资产 + 判定结论 + 已解析的归属账号名。"""
+    """一行清单 = 资产（投影行或模型实例）+ 判定结论 + 已解析的归属账号名。"""
 
-    asset: CloudAsset
+    asset: IdleListSource
     verdict: IdleVerdict
     account_name: str | None
 
 
-def _account_names(assets: list[CloudAsset]) -> dict[int, str]:
+def _account_names(assets: Sequence[IdleListSource]) -> dict[int, str]:
     """候选行引用到的账号名，一次读成 `{pk: account_name}`（规格 §8.1 方案 5）。
 
     读在候选快照**之后**：`on_delete=RESTRICT` 下被引用的账号删不掉，故这次读取必然覆盖
@@ -62,7 +156,7 @@ def _account_names(assets: list[CloudAsset]) -> dict[int, str]:
     return dict(CloudAccount.objects.filter(pk__in=ids).values_list("id", "account_name"))
 
 
-def _account_name(asset: CloudAsset, names: dict[int, str]) -> str | None:
+def _account_name(asset: IdleListSource, names: dict[int, str]) -> str | None:
     """归属账号：域名取注册商，其余取云账号名（PRD 3.14-2）。"""
     if asset.resource_type == _DOMAIN:
         return asset.registrar
@@ -120,7 +214,7 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
     """
     config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
     now: datetime = timezone.now()
-    assets = list(_candidate_queryset(filters))
+    assets = [IdleCandidate(*t) for t in _candidate_queryset(filters).values_list(*_PROJECTION)]
     names = _account_names(assets)
     rows: list[IdleRow] = []
     for asset in assets:
