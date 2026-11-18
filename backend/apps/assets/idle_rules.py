@@ -67,8 +67,10 @@ class IdleVerdict:
 def stopped_since(asset: CloudAsset) -> datetime | None:
     """停机起点三级回退（spec §8-D11）：`status_changed_at` → `first_seen_at` → `create_time`。
 
-    `align_assets` 与 `upsert_domain` 都写前两个，但 `seed_demo` 与 Admin 手工录入的行实测
-    两列皆空；`create_time` 由 `auto_now_add` 恒有值，语义同为「进入平台的时间」。
+    `align_assets` 与 `upsert_domain` 都写前两个；Admin 单条维护写不到它们——
+    `CloudAssetAdmin` 把两列列为只读，新建行两列皆空，其它未经这两条路径落库的
+    行同样可能为空。`create_time` 由 `auto_now_add` 恒有值，语义同为「进入平台的
+    时间」，故这一级回退不可省。
     代价：对「先入库、后停机」的行会低估停机时长（与 D8 的接受高估方向相反，已在 spec 登记）。
 
     Args:
