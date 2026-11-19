@@ -1,4 +1,4 @@
-"""闲置清单读路径（api.md 接口16）：候选预筛等价性、判定、过滤、排序、每请求读配置。"""
+"""闲置清单读路径（api.md 接口16）：谓词下推的 SQL 形状、判定、过滤、排序、每请求读配置。"""
 
 from __future__ import annotations
 
@@ -11,14 +11,11 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.assets.idle_rules import (
-    IDLE_CANDIDATE_STATUSES,
     IDLE_DOMAIN_EXPIRED,
     IDLE_EIP_UNBOUND,
     IDLE_POSTPAID_STOPPED,
     IDLE_PREPAID_STOPPED,
-    IdleConfig,
     IdleVerdict,
-    judge,
 )
 from apps.assets.models import CloudAsset
 from apps.assets.selectors import (
@@ -28,6 +25,7 @@ from apps.assets.selectors import (
     IdleRow,
     _sort_rows,
     list_idle_assets,
+    prepare_idle_read,
 )
 from apps.billing.models import CloudAccount
 from apps.core.models import PlatformSetting
@@ -100,38 +98,25 @@ def test_released_asset_absent(account: CloudAccount) -> None:
 
 
 @pytest.mark.django_db
-def test_candidate_prefilter_is_lossless() -> None:
-    """必要条件预筛不得改变结果：预筛集合之外的状态永远判不出闲置。
+def test_sql_carries_the_exact_predicate_not_a_prefilter() -> None:
+    """读路径的 SQL 必须自己带完整判定谓词：`charge_type` 比较与三级回退都在 WHERE 里。
 
-    逐个状态跑一遍 `CloudAsset.Status`，凡是候选集合外的都必须返回 None——
-    这是 §8-D12 那条「SQL 只下推必要条件」的等价性证明。
+    取代删除的 `test_candidate_prefilter_is_lossless`（D14-g）。这条**不证明等价**
+    （等价归 `test_idle_sql_equiv.py`），它证明的是**位置**：判定确实进了 SQL，
+    而不是取回 40 万行后再筛。`stopped` 出现两次是新旧形状的分界——旧预筛只在
+    一个 `status IN (…)` 里写它 1 次，新 SQL 里判据 ① 与 ② 各自比较一次。
 
-    `probes` 是这条证明的**自证**：候选集合若扩到覆盖全部状态，循环体一次都不执行，
-    断言会空转变绿。故把实际探测的组合数钉死为 50 = (9 状态 - 4 候选) × 2 计费 × 5 类型；
-    状态枚举或候选集合任一侧变动，都必须同时改这个数字，否则本测试立刻失败。
+    token 写法按 Django 5.2 的现证渲染定稿：`str(query)` 走 `sql % params`，字面量
+    **裸内联不带引号**（`"cloud_asset"."status" = stopped`），故这里先去单引号再比对，
+    使断言对「裸值」与「带引号值」两种渲染同时成立，而**计数**仍是硬约束。
     """
-    now = timezone.now()
-    probes = 0
-    for status, *_ in CloudAsset.Status.choices:
-        if status in {s.value if hasattr(s, "value") else s for s in IDLE_CANDIDATE_STATUSES}:
-            continue
-        for charge_type in ("prepaid", "postpaid"):
-            for resource_type in ("ecs", "rds", "eip", "nat", "domain"):
-                asset = CloudAsset(
-                    resource_type=resource_type,
-                    instance_id="probe",
-                    status=status,
-                    charge_type=charge_type,
-                    expire_time=now,
-                    status_changed_at=now - timedelta(days=99),
-                )
-                probes += 1
-                assert judge(asset, IdleConfig(idle_stopped_days=1), now) is None, (
-                    status,
-                    charge_type,
-                    resource_type,
-                )
-    assert probes == 50
+    _make(None, resource_type="eip", instance_id="shape-1", status=CloudAsset.Status.UNBOUND)
+    sql = str(prepare_idle_read(IdleQueryFilters()).queryset.query).replace("'", "")
+    assert "COALESCE(" in sql  # ② 的 D11 三级回退进了 SQL，不是在 Python 里回退
+    assert sql.count("= stopped") == 2  # ①② 各一次；旧预筛只在 IN (…) 里写 1 次
+    assert "= prepaid" in sql and "= postpaid" in sql  # 旧形状根本不读 charge_type
+    for tok in ("= eip", "= unbound", "= domain", "IN (expired, expiring)"):
+        assert tok in sql  # ③④ 两支的取值也必须逐支落在 WHERE 里，不能只靠取回后再筛
 
 
 @pytest.mark.django_db
@@ -261,10 +246,11 @@ def test_stopped_since_fallback_hits_criterion_2_through_the_read_path(
 ) -> None:
     """D11 三级回退必须**穿过 DB 读路径**命中判据 ②（spec §8-D11 / 终审 IM-1）。
 
-    **这条在防什么（它存在的全部理由）**：防有人把「停机 ≥ N 天」的日阈值下推进 SQL——
-    即给 `_candidate_queryset` 加一条 `status_changed_at__lte=now - timedelta(days=N)`
-    当必要条件（正是 spec §8-D12「SQL 只下推必要条件、不复制判定口径」禁止的形态）。
-    只要那条下推按**当前阈值**取数（而不是把 14 写死），其余 353 条旧测试实测全绿，而它会
+    **这条在防什么（它存在的全部理由）**：防「停机 ≥ N 天」的日阈值下推进 SQL 时**只按第 1 级
+    取值**——即给 `idle_predicate_sql()` 加一条 `status_changed_at__lte=now -
+    timedelta(days=N)`，而不是挂在 `IDLE_SINCE` 那三级 `COALESCE` 注解上（spec §8-D12 当年
+    因此禁止下推日阈值；Task 2 把判定整体下推后，本条就是「下推的写法没丢回退」的唯一现场证据）。
+    只要那条下推按**当前阈值**取数（而不是把 14 写死），其余旧测试实测全绿，而它会
     **静默丢掉所有停机起点来自回退的行**：这两行的 `status_changed_at` 在库里都是 NULL，
     `stopped_since`（`idle_rules.py`）只能落到 `first_seen_at` / `create_time`，而按
     `status_changed_at` 过滤的 SQL 谓词对 NULL 恒为假 ⇒ 行在进 `judge` 之前就被挡掉。

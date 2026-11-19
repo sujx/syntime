@@ -4,13 +4,17 @@
 两份表达。这个文件就是那笔代价的保险——它把「两份表达必须永远同解」变成机器约束。
 任何一侧改动（新增判据、改阈值语义、改 `status` 取值、改回退层级）都必须先在这里红一次。
 
-保险丝有两格，别把第一格当成第二格：
+保险丝有三格，别把第一格当成第二格：
 - rowspace（`PREFIX`，1215 行全笛卡尔）钉四支谓词、`status` 取值、阈值边界 13/14/15，
   以及三级回退**各自单独非空**的那种行。
 - 两条单行用例（`PREC_PREFIX` / `THRESH_PREFIX`）钉 rowspace 造不出的那两格：第 1、2 级
   同时非空时取哪一级（生产 `align_assets` / `upsert_domain` 就是这种行 ⇒ 层级互换必须红），
   以及判据 ② 的阈值确实取自 `config`（写成常数 14 必须红）。两侧取数都按各自前缀圈定，
   用例末尾把该前缀的行删干净——三个前缀互不包含，任何一侧都不会读到别人的行。
+- 最后一格（`test_production_predicate_equals_branch_or_set`）把同一批行喂给**生产谓词函数**
+  `selectors.idle_predicate_sql()`：前两条只证明口径写法，这一条才证明读路径接的是它、
+  且旁边没多接或少接条件（少一支、漏 `released_at` 都会红）。它**抓不到**的是重新加回
+  那条无损状态预筛——预筛与精确谓词同解 ⇒ 集合不变，这正是 Task 2 敢删它的原因。
 
 本文件不覆盖的两格（登记在此，免得把上面那句读过头）：三档时间戳全空——`create_time` 由
 `auto_now_add` 恒非空，DB 里造不出这种行，Python 侧那一格由 `test_idle_rules.py` 的
@@ -284,3 +288,36 @@ def test_stopped_threshold_comes_from_config() -> None:
 
     # 收尾把这一格自己的行删干净——前缀纪律见模块 docstring
     CloudAsset.objects.filter(instance_id__startswith=THRESH_PREFIX).delete()
+
+
+@pytest.mark.django_db
+def test_production_predicate_equals_branch_or_set() -> None:
+    """生产读路径的谓词必须与 `idle_branches()` 四支 OR **同一批行**（D14-e① 接线半边）。
+
+    上一组测试只证明谓词写得对；这条证明的是"读路径真的用了它、且没在旁边多加或少加条件"。
+    两条一起才封住 `prepare_idle_read()` 这一层。
+
+    rowspace 全是不曾释放的行，`judge` 的第一条早退（`released_at`）因此落在前几条护栏的
+    射程之外，而 Task 2 起这条早退也进了 SQL ⇒ 这里额外落一行「四支必命中但已释放」的行
+    钉住它：漏掉 `released_at__isnull=True` 时它会挤进 `production`（实测红），而 `jm` 与
+    `_branch_ids` 两侧都没有它。取数一律显式传 `PREFIX`（`_judge_map`／`_branch_ids` 的
+    默认值同样是它，这里不依赖默认）。
+    """
+    from apps.assets.selectors import IdleQueryFilters, idle_predicate_sql
+
+    now = timezone.now()
+    cfg = IdleConfig(idle_stopped_days=THRESHOLD)
+    _make_rows(now)
+    released = CloudAsset.objects.create(
+        resource_type="ecs",
+        instance_id=f"{PREFIX}released",
+        status=CloudAsset.Status.STOPPED,
+        charge_type="prepaid",
+        released_at=now,
+    )
+    jm = _judge_map(cfg, now, PREFIX)
+    production = set(idle_predicate_sql(IdleQueryFilters(), cfg, now).values_list("id", flat=True))
+    assert production == set(jm)
+    assert production == _branch_ids(cfg, now, list(IDLE_TYPES), PREFIX)
+    assert int(released.pk) not in production  # 已释放行永不进清单（judge 的第一条早退）
+    assert len(production) == EXPECTED_HITS  # 不是「两边都空」的相等

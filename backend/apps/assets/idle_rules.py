@@ -36,16 +36,6 @@ IDLE_TYPES: tuple[str, ...] = (
 # PRD 3.14-4 误报提示：接口出参 notice 的唯一来源，前端原样展示
 IDLE_NOTICE = "闲置为状态推导的疑似结果，有意停机的资源请忽略"
 
-# 四判据的**必要条件下推**集合（spec §8-D12）：命中任一判据必然落在此状态集内，
-# 用它做 SQL 预筛只减少 Python 侧行数、不改变结果。**这不是判定口径**，改它必须
-# 同步通过 tests/test_idle_selectors.py 的候选等价性测试。
-IDLE_CANDIDATE_STATUSES: tuple[str, ...] = (
-    CloudAsset.Status.STOPPED,
-    CloudAsset.Status.UNBOUND,
-    CloudAsset.Status.EXPIRED,
-    CloudAsset.Status.EXPIRING,
-)
-
 _PREPAID = "prepaid"
 _POSTPAID = "postpaid"
 _EIP = "eip"

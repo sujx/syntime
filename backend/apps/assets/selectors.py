@@ -1,9 +1,10 @@
 """闲置资源清单读路径（api.md 接口16；工程约定 §2：selectors 只做读）。
 
-判定口径不在本层：SQL 只下推**必要条件**（未释放 + 状态 ∈ `IDLE_CANDIDATE_STATUSES`，
-spec §8-D12）与纯列筛选，逐行判定一律交给 `idle_rules.judge`；`idleType` 过滤与排序在
-判定后于 Python 侧完成（api.md 接口16：排序服务端全量执行），分页交视图层 `ResultPaginator`。
-本层不感知角色。
+判定口径不在本层：SQL 下推的是 `idle_rules.idle_branches()` 表达的**精确谓词**（未释放 ＋
+选中支的 OR，spec §9 D14-a/g），纯列筛选由 `_column_filters()` 叠加；`judge` 仍逐行跑，
+只负责出参文案与「SQL 命中 ⇒ judge 必命中」的对拍（等价性由 tests/test_idle_sql_equiv.py
+钉住）。排序当前仍在 Python 侧 `_sort_rows`（api.md 接口16：排序服务端全量执行），分页交
+视图层 `ResultPaginator`。本层不感知角色。
 
 取数形状是 `_PROJECTION` 这 15 列的投影（spec §8.1 方案 3 + 方案 5），既不取整行也不 JOIN
 账号表：5 万行实测把这两步的代价量过（1911ms 整行 → 624ms 投影；其中去 JOIN 值 662ms），
@@ -15,16 +16,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from functools import reduce
+from operator import or_
+from typing import Any, Protocol
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.assets.idle_rules import (
-    IDLE_CANDIDATE_STATUSES,
+    IDLE_SINCE,
+    IDLE_SINCE_ALIAS,
+    IDLE_TYPES,
     IdleConfig,
     IdleSource,
     IdleVerdict,
+    idle_branches,
     judge,
 )
 from apps.assets.models import CloudAsset
@@ -167,12 +173,8 @@ def _account_name(asset: IdleListSource, names: dict[int, str]) -> str | None:
     return names[asset.cloud_account_id]
 
 
-def _candidate_queryset(filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
-    """候选集：必要条件预筛（不改变结果，见 test_candidate_prefilter_is_lossless）+ 纯列筛选。"""
-    qs = CloudAsset.objects.filter(
-        released_at__isnull=True,
-        status__in=list(IDLE_CANDIDATE_STATUSES),
-    )
+def _column_filters(qs: QuerySet[CloudAsset], filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
+    """纯列筛选（与判据无关，留在 SQL）：类型／账号／地域／项目／关键字。"""
     if filters.resource_type:
         qs = qs.filter(resource_type=filters.resource_type)
     if filters.cloud_account_id is not None:
@@ -191,8 +193,96 @@ def _candidate_queryset(filters: IdleQueryFilters) -> QuerySet[CloudAsset]:
     return qs
 
 
+def idle_predicate_sql(
+    filters: IdleQueryFilters, config: IdleConfig, now: datetime
+) -> QuerySet[CloudAsset]:
+    """带精确判定谓词的候选集（spec §9 D14-a）：未释放 ＋ 选中支的 OR。
+
+    **不含列筛选**——列筛选由 `_column_filters()` 在调用处叠加（分开是为了让
+    `test_production_predicate_equals_branch_or_set` 能拿它和纯判据集合直接对拍）。
+    没有 `status IN (...)` 预筛了：精确谓词本身蕴含那四个状态（D14-g）。
+
+    Args:
+        filters: 查询条件；只有 `idle_types` 参与谓词（取值已由序列化层校验为 `IDLE_TYPES`
+            子集，故 `branches[t]` 不会 KeyError），为空表示四支全取。
+        config: 阈值配置，与同请求的 `judge` 用**同一个**实例。
+        now: 判定时钟，与同请求的 `judge` 用**同一个**时刻。
+
+    Returns:
+        带 `idle_since` 注解（支 ② 的谓词挂在它上面，缺注解 Django 会 FieldError）且已
+        下推判定谓词的 `CloudAsset` QuerySet，未投影、未排序、未分页。
+    """
+    branches = idle_branches(config, now)
+    types = filters.idle_types or list(IDLE_TYPES)
+    predicate = reduce(or_, (branches[t] for t in types))
+    return (
+        CloudAsset.objects.filter(released_at__isnull=True)
+        .annotate(**{IDLE_SINCE_ALIAS: IDLE_SINCE})
+        .filter(predicate)
+    )
+
+
+@dataclass(frozen=True)
+class IdleRead:
+    """一次请求的读快照：阈值、时钟，与已下推谓词的投影 QuerySet（spec §9 D14）。
+
+    `config` 与 `now` 在这里**只取一次**并贯穿到出参——判据 ② 的阈值若在这两步之间各读一
+    次，SQL 筛的行与 `judge` 写的文案可能来自不同的 N。
+    """
+
+    config: IdleConfig
+    now: datetime
+    queryset: QuerySet[Any]
+
+    def rows(self, chunk: Sequence[Sequence[Any]]) -> list[IdleRow]:
+        """把一页（或整表）投影行组装成 `IdleRow`：`judge` 只在这里逐行跑。
+
+        Args:
+            chunk: `values_list(*_PROJECTION)` 的切片结果，列序由
+                `test_projection_columns_are_the_row_fields_in_order` 钉住。
+
+        Returns:
+            `IdleRow` 列表，顺序即入参顺序——本函数不排序：当前由调用方的 `_sort_rows`
+            负责，ORDER BY 下推后（Task 3）SQL 给出的顺序就是它。
+        """
+        assets = [IdleCandidate(*t) for t in chunk]
+        names = _account_names(assets)
+        rows: list[IdleRow] = []
+        for asset in assets:
+            verdict = judge(asset, self.config, self.now)
+            if verdict is None:
+                # SQL 谓词与 judge 等价（D14-e①）时此处不可达；真走到这里说明两份表达已分叉。
+                # 宁可当场红，也不要静默少一行——`total` 是 SQL 算的，少行会让响应自相矛盾。
+                raise AssertionError(f"SQL 命中但 judge 未命中：pk={asset.pk}（D14-e 等价性已破）")
+            rows.append(
+                IdleRow(asset=asset, verdict=verdict, account_name=_account_name(asset, names))
+            )
+        return rows
+
+
+def prepare_idle_read(filters: IdleQueryFilters) -> IdleRead:
+    """取一次阈值／时钟，下推判定谓词与列筛选，返回读上下文（视图与整表消费方共用）。
+
+    Args:
+        filters: 接口16 查询条件（已由序列化层校验）。
+
+    Returns:
+        `IdleRead`：投影 QuerySet 已带精确判定谓词与列筛选，**尚未**排序、**尚未**分页。
+    """
+    config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
+    now: datetime = timezone.now()
+    qs = _column_filters(idle_predicate_sql(filters, config, now), filters).values_list(
+        *_PROJECTION
+    )
+    return IdleRead(config=config, now=now, queryset=qs)
+
+
 def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
     """返回命中四判据的闲置清单，已按 `sort_field` / `sort_order` 排好、未分页。
+
+    整份取数（不分页）——接口 18 导出与既有测试的消费口。接口 16 的视图目前仍走本函数，
+    每请求取回整表；谓词已下推，行数下推（ORDER BY ＋ LIMIT/OFFSET）归后续 Task，届时视图
+    改用 `prepare_idle_read()` ＋ `ResultPaginator` ＋ `IdleRead.rows()`。
 
     `idle_stopped_days` 每请求经 `get_platform_setting` 两级回退读取（spec US-4）。
 
@@ -213,18 +303,8 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
         命中判据的 `IdleRow` 列表（资产 + `judge` 结论 + 已解析的归属账号名），
         已全量排序、未分页（分页交视图层 `ResultPaginator`）；无命中时为空列表。
     """
-    config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
-    now: datetime = timezone.now()
-    assets = [IdleCandidate(*t) for t in _candidate_queryset(filters).values_list(*_PROJECTION)]
-    names = _account_names(assets)
-    rows: list[IdleRow] = []
-    for asset in assets:
-        verdict = judge(asset, config, now)
-        if verdict is None:
-            continue
-        if filters.idle_types and verdict.idle_type not in filters.idle_types:
-            continue
-        rows.append(IdleRow(asset=asset, verdict=verdict, account_name=_account_name(asset, names)))
+    read = prepare_idle_read(filters)
+    rows = read.rows(list(read.queryset))
     return _sort_rows(rows, filters)
 
 
