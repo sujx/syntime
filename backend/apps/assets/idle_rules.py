@@ -1,16 +1,19 @@
 """闲置判定四判据（PRD 3.14-1 / Q17；spec §2 接缝 A）。
 
 **判定口径的唯一实现**：查询接口与后续导出都只调 `judge`，禁止在 selector / serializer /
-view 里复制判据条件（spec US-3）。纯函数、不碰 DB、时钟由调用方注入，F063 的四类命中与
-阈值翻转全部打在这一层。
+view 里复制判据条件（spec US-3）。`judge` 仍是纯函数（不碰 DB、时钟由调用方注入），F063 的
+四类命中与阈值翻转全部打在这一层；`idle_branches()` 只**构造** ORM 查询表达式、不执行查询，
+因此口径的两份表达仍留在同一个文件里，避免跨文件漂移。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
+from django.db.models import Q
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.assets.models import CloudAsset
@@ -117,6 +120,52 @@ def stopped_since(asset: IdleSource) -> datetime | None:
     return asset.status_changed_at or asset.first_seen_at or asset.create_time
 
 
+IDLE_SINCE_ALIAS = "idle_since"
+# 停机起点的 SQL 表达 = `stopped_since()` 的三级回退（D14-b）。别名由读路径 annotate 出来，
+# 判据 ② 的阈值比较必须挂在这个别名上——`Q(Coalesce(...), "lte", x)` 这种表达式位置参数
+# 在 Django 5.2 会被拒（Cannot filter against a non-conditional expression）。
+IDLE_SINCE = Coalesce("status_changed_at", "first_seen_at", "create_time")
+
+
+def idle_branches(config: IdleConfig, now: datetime) -> dict[str, Q]:
+    """四判据的 SQL 谓词表达：`{idle_type: Q}`，与 `judge` 逐支等价（spec §9 D14-a）。
+
+    每支对应 `judge` 里同序号的那条 `if`：分支间**互斥**（①② 要 `status=stopped` 并由
+    `charge_type` 分家、③ 要 `unbound`、④ 要 `expired|expiring`，而 `status` 是单值列），
+    所以短路顺序不影响命中集合，`idleType` 多选取子集 OR 与「先取回再按结论筛」同解。
+
+    本函数不是第二套口径：语义以 `judge` 为准，等价性由
+    `tests/test_idle_sql_equiv.py` 在全笛卡尔积上钉死（D14-e①）。改这里必须同轮改 `judge`
+    并让那条测试先红后绿。
+
+    Args:
+        config: 阈值配置（只有 ② 用到 `idle_stopped_days`）。
+        now: 与 `judge` **同一个**注入时刻；读路径每请求取一次、贯穿到出参。
+
+    Returns:
+        四支谓词。调用方必须自己带上 `released_at__isnull=True`（那是 `judge` 的第一条早退，
+        不属于任何一支）。
+    """
+    stopped = CloudAsset.Status.STOPPED
+    return {
+        # ① 包年包月已停机（不需要时长依据）
+        IDLE_PREPAID_STOPPED: Q(charge_type=_PREPAID, status=stopped),
+        # ② 按量停机 ≥ N 天：floor 语义与整数 N ⇒ `>= N*86400s` 等价于 `<= now - N 天`
+        IDLE_POSTPAID_STOPPED: Q(
+            charge_type=_POSTPAID,
+            status=stopped,
+            **{f"{IDLE_SINCE_ALIAS}__lte": now - timedelta(days=config.idle_stopped_days)},
+        ),
+        # ③ EIP 未绑定
+        IDLE_EIP_UNBOUND: Q(resource_type=_EIP, status=CloudAsset.Status.UNBOUND),
+        # ④ 域名过期/即将到期：两个子分支都命中，差别只在文案（D14-c ⇒ SQL 里不做日期差）
+        IDLE_DOMAIN_EXPIRED: Q(
+            resource_type=_DOMAIN,
+            status__in=[CloudAsset.Status.EXPIRED, CloudAsset.Status.EXPIRING],
+        ),
+    }
+
+
 def judge(asset: IdleSource, config: IdleConfig, now: datetime) -> IdleVerdict | None:
     """按 PRD 3.14-1 四判据推导闲置结论，全不命中返回 None。
 
@@ -128,6 +177,8 @@ def judge(asset: IdleSource, config: IdleConfig, now: datetime) -> IdleVerdict |
 
     Returns:
         命中判据的结论；已软删资产与全不命中均为 None。
+
+    SQL 下推表达见 `idle_branches`，等价性由 tests/test_idle_sql_equiv.py 钉住。
     """
     if asset.released_at is not None:
         return None
