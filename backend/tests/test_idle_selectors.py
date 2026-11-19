@@ -15,15 +15,12 @@ from apps.assets.idle_rules import (
     IDLE_EIP_UNBOUND,
     IDLE_POSTPAID_STOPPED,
     IDLE_PREPAID_STOPPED,
-    IdleVerdict,
 )
 from apps.assets.models import CloudAsset
 from apps.assets.selectors import (
     _PROJECTION,
     IdleCandidate,
     IdleQueryFilters,
-    IdleRow,
-    _sort_rows,
     list_idle_assets,
     prepare_idle_read,
 )
@@ -291,43 +288,73 @@ def test_stopped_since_fallback_hits_criterion_2_through_the_read_path(
 
 
 @pytest.mark.django_db
-def test_sort_is_total_so_null_bucket_cannot_shuffle_across_pages(account: CloudAccount) -> None:
-    """排序必须是**全序**：候选集 SQL 不带 ORDER BY，空值桶若不显式按 `pk` 排就随物理扫描顺序漂，
-    翻页时同一批行会换序（api.md 接口16「服务端全量排序」的前提）。
+def test_sql_order_is_total_and_pages_stitch_without_overlap(account: CloudAccount) -> None:
+    """排序全序性从 Python 侧那份全量排序搬到 SQL：跨页拼接不重、不漏、不换序（D14-d）。
 
-    这里绕过 DB 顺序、直接喂乱序行列表，才能把这条不变量真的钉住。
+    三点同时成立才放行：空值桶恒最后（不随方向翻转）、同值行的次级键**跟随**方向
+    （`asc` ⇒ pk ASC、`desc` ⇒ pk DESC）、空值桶恒 pk ASC。把次级键写成无条件 `-pk`
+    的形状在 `asc` 档必然红——那正是 spec D14-d 点名的错法。
+
+    三行同值行的 pk 由 `_make` 顺序创建 ⇒ 单调递增（`instance_id` 里带自增计数，创建顺序
+    即 pk 顺序）；这是本条期望序列成立的前提，若改用 bulk_create 之类无序写法就要同步改期望。
     """
-    verdict = IdleVerdict(IDLE_EIP_UNBOUND, "EIP 处于未绑定状态")
-    now = timezone.now()
-    timed = _make(
-        account,
-        resource_type="eip",
-        instance_id="eip-timed",
-        status=CloudAsset.Status.UNBOUND,
-        expire_time=now + timedelta(days=1),
-    )
-    null_low = _make(
-        account,
-        resource_type="eip",
-        instance_id="eip-null-low",
-        status=CloudAsset.Status.UNBOUND,
-        expire_time=None,
-    )
-    null_high = _make(
-        account,
-        resource_type="eip",
-        instance_id="eip-null-high",
-        status=CloudAsset.Status.UNBOUND,
-        expire_time=None,
-    )
-    scrambled = [
-        IdleRow(asset=a, verdict=verdict, account_name="acc1") for a in (null_high, null_low, timed)
+    same_tag = [
+        _make(
+            account,
+            resource_type="eip",
+            instance_id=f"tie-{i}",
+            status=CloudAsset.Status.UNBOUND,
+            project_tag="同值",
+        )
+        for i in range(3)
     ]
-    expected = [timed.pk, null_low.pk, null_high.pk]
-
+    null_tag = _make(
+        account,
+        resource_type="eip",
+        instance_id="tie-null",
+        status=CloudAsset.Status.UNBOUND,
+        project_tag=None,
+    )
+    expected = {
+        "asc": [a.pk for a in same_tag] + [null_tag.pk],
+        "desc": [a.pk for a in reversed(same_tag)] + [null_tag.pk],  # 空值桶仍 pk ASC
+    }
     for order in ("asc", "desc"):
-        out = [r.asset.pk for r in _sort_rows(scrambled, IdleQueryFilters(sort_order=order))]
-        assert out == expected, order
+        filters = IdleQueryFilters(sort_field="project_tag", sort_order=order)
+        read = prepare_idle_read(filters)
+        stitched = [
+            row.asset.pk
+            for page in range(4)  # 每页 1 行 × 4 页 = 4 行全覆盖（切片偏移 0..3 各命中一行）
+            for row in read.rows(list(read.queryset[page : page + 1]))
+        ]
+        assert stitched == expected[order], order
+
+
+@pytest.mark.django_db
+def test_text_sort_uses_binary_collation(account: CloudAccount) -> None:
+    """文本键排序必须带 `COLLATE "C"` ＋ `NULLS LAST`（D14-f/D14-d）。
+
+    本机 `datcollate=en_HK.UTF-8` 与 Python 码位序不同；collation 一变，`LIMIT 20`
+    取到的是**另一批行**，不是「顺序难看」的小事。
+    """
+    _make(account, resource_type="eip", instance_id="col-1", status=CloudAsset.Status.UNBOUND)
+    sql = str(prepare_idle_read(IdleQueryFilters(sort_field="instance_id")).queryset.query)
+    assert 'COLLATE "C"' in sql
+    assert "NULLS LAST" in sql
+
+
+@pytest.mark.django_db
+def test_collate_c_beats_locale_order_on_mixed_case(account: CloudAccount) -> None:
+    """大小写＋非 ASCII 混合 ID：码位序 `B` < `a` < `中`，`en_HK` 下大写与重音次序不同。
+
+    这条是上一条的**结果版**：上一条只看 SQL 文本，这一条真的让 DB 排序并取前两行。
+    """
+    _make(account, resource_type="eip", instance_id="B-eip", status=CloudAsset.Status.UNBOUND)
+    _make(account, resource_type="eip", instance_id="a-eip", status=CloudAsset.Status.UNBOUND)
+    _make(account, resource_type="eip", instance_id="中文-eip", status=CloudAsset.Status.UNBOUND)
+    read = prepare_idle_read(IdleQueryFilters(sort_field="instance_id"))
+    ids = [row.asset.instance_id for row in read.rows(list(read.queryset[:2]))]
+    assert ids == ["B-eip", "a-eip"]  # 码位序：ASCII 大写在前，非 ASCII 排最后
 
 
 @pytest.mark.django_db

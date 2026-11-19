@@ -5,7 +5,7 @@
 ``services.import_domains``（与 Django Admin 单条维护共用同一校验逻辑）。
 
 闲置清单：判定实时推导、不落库，本层只做入参校验、分页与 notice 拼装，
-判据口径在 ``idle_rules.judge``、读路径在 ``selectors.list_idle_assets``。
+判据口径在 ``idle_rules.judge``、读路径在 ``selectors.prepare_idle_read``。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.assets.idle_rules import IDLE_NOTICE
-from apps.assets.selectors import list_idle_assets
+from apps.assets.selectors import prepare_idle_read
 from apps.assets.serializers import IdleQueryInputSerializer, IdleRowSerializer
 from apps.assets.services import import_domains
 from common.api.pagination import ResultPaginator
@@ -61,8 +61,9 @@ class IdleResourceView(APIView):
     """闲置资源清单（api.md 接口16 / PRD 3.14）。
 
     判定实时推导、不落库（PRD 3.14-8）。权限：仅成本管理员与云运维（财务 40300），
-    因此**不需要**字段级屏蔽层。排序在判定后的全量列表上完成，分页用全局 `ResultPaginator`
-    （它接受普通 list，先例见 `CostSummaryView`）；`notice` 是误报提示文案的单一来源。
+    因此**不需要**字段级屏蔽层。谓词、排序、分页全在 SQL，判定只跑页内行；
+    `ResultPaginator` 收到的是 QuerySet，`total` 由 SQL COUNT 给出。
+    `notice` 是误报提示文案的单一来源。
     """
 
     permission_classes = (IsAuthenticated, IsCostAdminOrOps)
@@ -70,11 +71,13 @@ class IdleResourceView(APIView):
     def get(self, request: Request) -> Response:
         inp = IdleQueryInputSerializer(data=self._query_dict(request))
         inp.is_valid(raise_exception=True)
-        rows = list_idle_assets(inp.to_filters())
+        read = prepare_idle_read(inp.to_filters())
 
         paginator = ResultPaginator()
-        page = paginator.paginate_queryset(rows, request, self)
-        page_rows = IdleRowSerializer(page, many=True).data
+        # 分页对象是**带完整谓词与 ORDER BY 的 QuerySet**：每请求只回一页（≤100 行），
+        # 不再取回整份候选。`total` 由 SQL COUNT 给出，判定只跑页内行。
+        page = paginator.paginate_queryset(read.queryset, request, self)
+        page_rows = IdleRowSerializer(read.rows(page), many=True).data
         data: dict[str, Any] = OrderedDict(
             paginator.get_paginated_response(cast("list[Any]", page_rows)).data
         )

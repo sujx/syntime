@@ -3,8 +3,9 @@
 判定口径不在本层：SQL 下推的是 `idle_rules.idle_branches()` 表达的**精确谓词**（未释放 ＋
 选中支的 OR，spec §9 D14-a/g），纯列筛选由 `_column_filters()` 叠加；`judge` 仍逐行跑，
 只负责出参文案与「SQL 命中 ⇒ judge 必命中」的对拍（等价性由 tests/test_idle_sql_equiv.py
-钉住）。排序当前仍在 Python 侧 `_sort_rows`（api.md 接口16：排序服务端全量执行），分页交
-视图层 `ResultPaginator`。本层不感知角色。
+钉住）。排序与分页也在 SQL：`order_by_key()` 给出 ORDER BY（api.md 接口16「服务端全量排序」
+的全序语义由此承接），分页交视图层 `ResultPaginator`（它收到的是已排序的投影 QuerySet，
+`total` 由 SQL `COUNT` 给出）。本层不感知角色。
 
 取数形状是 `_PROJECTION` 这 15 列的投影（spec §8.1 方案 3 + 方案 5），既不取整行也不 JOIN
 账号表：5 万行实测把这两步的代价量过（1911ms 整行 → 624ms 投影；其中去 JOIN 值 662ms），
@@ -20,7 +21,8 @@ from functools import reduce
 from operator import or_
 from typing import Any, Protocol
 
-from django.db.models import Q, QuerySet
+from django.db.models import Case, F, IntegerField, Q, QuerySet, When
+from django.db.models.functions import Collate
 from django.utils import timezone
 
 from apps.assets.idle_rules import (
@@ -222,9 +224,39 @@ def idle_predicate_sql(
     )
 
 
+# 文本排序键（D14-f）：这些列在库里是 UTF-8 text，本机 collation 是 en_HK.UTF-8，
+# 与 Python `str` 的码位序不同 ⇒ 一律包 `Collate(expr, "C")`，否则 LIMIT 取到另一批行。
+_TEXT_SORT_KEYS = frozenset({"instance_id", "resource_type", "status", "region", "project_tag"})
+# 非空/空两桶的次级键符号随方向变（D14-d）：desc 时非空桶要 pk DESC（写作 -pk ASC），
+# asc 时非空桶要 pk ASC —— 无条件的 -pk 只在 desc 对，是 spec 点名的错法。
+
+
+def order_by_key(filters: IdleQueryFilters) -> list[Any]:
+    """把 Python 侧那份全量排序的三条语义翻成 ORDER BY：键（NULLS LAST，方向照传入）＋ 次级 pk。
+
+    Args:
+        filters: 取 `sort_field`（白名单外回退 `expire_time`）与 `sort_order`。
+
+    Returns:
+        可直接喂 `QuerySet.order_by()` 的表达式列表，恒两项。
+    """
+    name = filters.sort_field if filters.sort_field in _SORTABLE else DEFAULT_SORT_FIELD
+    desc = filters.sort_order == "desc"
+    # `primary` 必须是 `Any`：`Collate`/`F` 的 `.desc()/.asc()` 返回 `OrderBy`，
+    # 复用同一变量会被 mypy 判 `Incompatible types in assignment`（本机 django-stubs 实测）。
+    primary: Any = Collate(F(name), "C") if name in _TEXT_SORT_KEYS else F(name)
+    ordered = primary.desc(nulls_last=True) if desc else primary.asc(nulls_last=True)
+    tie = Case(
+        When(Q(**{f"{name}__isnull": True}), then=F("id")),
+        default=-F("id") if desc else F("id"),
+        output_field=IntegerField(),
+    )
+    return [ordered, tie.asc()]
+
+
 @dataclass(frozen=True)
 class IdleRead:
-    """一次请求的读快照：阈值、时钟，与已下推谓词的投影 QuerySet（spec §9 D14）。
+    """一次请求的读快照：阈值、时钟，与已下推谓词＋排序的投影 QuerySet（spec §9 D14）。
 
     `config` 与 `now` 在这里**只取一次**并贯穿到出参——判据 ② 的阈值若在这两步之间各读一
     次，SQL 筛的行与 `judge` 写的文案可能来自不同的 N。
@@ -242,8 +274,8 @@ class IdleRead:
                 `test_projection_columns_are_the_row_fields_in_order` 钉住。
 
         Returns:
-            `IdleRow` 列表，顺序即入参顺序——本函数不排序：当前由调用方的 `_sort_rows`
-            负责，ORDER BY 下推后（Task 3）SQL 给出的顺序就是它。
+            `IdleRow` 列表，顺序即入参顺序——本函数不排序：ORDER BY 已下推（见
+            `order_by_key()`），SQL 给出的顺序就是它。
         """
         assets = [IdleCandidate(*t) for t in chunk]
         names = _account_names(assets)
@@ -261,39 +293,37 @@ class IdleRead:
 
 
 def prepare_idle_read(filters: IdleQueryFilters) -> IdleRead:
-    """取一次阈值／时钟，下推判定谓词与列筛选，返回读上下文（视图与整表消费方共用）。
+    """取一次阈值／时钟，下推判定谓词、列筛选与排序，返回读上下文（视图与整表消费方共用）。
 
     Args:
         filters: 接口16 查询条件（已由序列化层校验）。
 
     Returns:
-        `IdleRead`：投影 QuerySet 已带精确判定谓词与列筛选，**尚未**排序、**尚未**分页。
+        `IdleRead`：投影 QuerySet 已带精确判定谓词、列筛选与 ORDER BY，**尚未**分页——
+        分页交调用方（视图层 `ResultPaginator` 对 QuerySet 切片，`total` 走 SQL `COUNT`）。
     """
     config = IdleConfig(idle_stopped_days=int(get_platform_setting("idle_stopped_days")))
     now: datetime = timezone.now()
-    qs = _column_filters(idle_predicate_sql(filters, config, now), filters).values_list(
-        *_PROJECTION
-    )
+    qs = _column_filters(idle_predicate_sql(filters, config, now), filters)
+    qs = qs.order_by(*order_by_key(filters)).values_list(*_PROJECTION)
     return IdleRead(config=config, now=now, queryset=qs)
 
 
 def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
     """返回命中四判据的闲置清单，已按 `sort_field` / `sort_order` 排好、未分页。
 
-    整份取数（不分页）——接口 18 导出与既有测试的消费口。接口 16 的视图目前仍走本函数，
-    每请求取回整表；谓词已下推，行数下推（ORDER BY ＋ LIMIT/OFFSET）归后续 Task，届时视图
-    改用 `prepare_idle_read()` ＋ `ResultPaginator` ＋ `IdleRead.rows()`。
+    整份取数（不分页）——接口 18 导出与既有测试的消费口。接口 16 的视图已改走
+    `prepare_idle_read()` ＋ `ResultPaginator` ＋ `IdleRead.rows()`，每请求只取回一页。
 
     `idle_stopped_days` 每请求经 `get_platform_setting` 两级回退读取（spec US-4）。
 
-    两条 Task 3/4/6 要照单继承的既定口径：
+    两条后续 Task 要照单继承的既定口径：
 
     - **归属优先级**：`resource_type == "domain"` 行的 `account_name` 取**注册商**
       （PRD 3.14-2），这就是产品规则本身，故域名行即便挂了 `cloud_account` 也显示注册商。
-    - **次级键方向**：非空桶的 `pk` 跟随 `sort_order`（`desc` 即 `pk DESC`），空值桶恒
-      `pk ASC`；对**已保存行**（`pk` 非空）`pk` 唯一，两个方向都是**严格全序**、跨调用稳定。
-      未保存行只可能来自手工构造的 `IdleRow`（本函数的读路径拿不到），其 `pk` 为 None ⇒
-      次级键恒等于 0，主键也相同时退回输入顺序，全序不成立。
+    - **排序全序性**：ORDER BY 已下推（`order_by_key()`）——非空桶的次级键 `pk` 跟随
+      `sort_order`（`desc` 即 `pk DESC`），空值桶恒 `pk ASC` 且恒排最后。库里的行 `pk`
+      非空且唯一 ⇒ 两个方向都是**严格全序**、跨请求稳定，逐页拼接不重不漏。
 
     Args:
         filters: 接口16 查询条件（已由序列化层校验）。`sort_field` 不在白名单时回退
@@ -301,26 +331,7 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
 
     Returns:
         命中判据的 `IdleRow` 列表（资产 + `judge` 结论 + 已解析的归属账号名），
-        已全量排序、未分页（分页交视图层 `ResultPaginator`）；无命中时为空列表。
+        已按 SQL ORDER BY 全量排序、未分页（分页交视图层 `ResultPaginator`）；无命中时为空列表。
     """
     read = prepare_idle_read(filters)
-    rows = read.rows(list(read.queryset))
-    return _sort_rows(rows, filters)
-
-
-def _sort_rows(rows: list[IdleRow], filters: IdleQueryFilters) -> list[IdleRow]:
-    """服务端全量排序：空值恒排最后（不随升降序翻转），`pk` 作稳定次级键免翻页跳动。
-
-    排序必须是**全序**：候选集 SQL 不带 ORDER BY，空值桶若沿用扫描顺序，同一批行在翻页时
-    会随物理顺序漂动，故空值桶也显式按 `pk` 升序收口。这一收口的前提是**已保存行**（`pk`
-    非空）：次级键写作 `row.asset.pk or 0`，未保存行的 `pk` 为 None ⇒ 全部落到 0，主键也相同
-    时只能退回输入顺序。生产读路径（`list_idle_assets`）只会喂已保存行，未保存行仅出现在
-    手工构造 `IdleRow` 的测试里。
-    """
-    name = filters.sort_field if filters.sort_field in _SORTABLE else DEFAULT_SORT_FIELD
-    reverse = filters.sort_order == "desc"
-    present = [row for row in rows if getattr(row.asset, name) is not None]
-    missing = [row for row in rows if getattr(row.asset, name) is None]
-    present.sort(key=lambda row: (getattr(row.asset, name), row.asset.pk or 0), reverse=reverse)
-    missing.sort(key=lambda row: row.asset.pk or 0)
-    return present + missing
+    return read.rows(list(read.queryset))

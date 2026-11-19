@@ -158,6 +158,20 @@ def test_filter_sort_and_paging(api_client, four_criteria) -> None:  # noqa: ANN
 
 
 @pytest.mark.django_db
+def test_api_pages_stitch_to_the_same_set_as_total(api_client, four_criteria) -> None:  # noqa: ANN001
+    """`total` 改由 SQL `COUNT` 给出：逐页拼接必须等于整份、且无重复无遗漏。"""
+    api_client.force_authenticate(user=_role_user("cost9", "成本管理员"))
+    seen: list[str] = []
+    # 只跑真实存在的两页（4 行 ÷ 每页 2 = num_pages 2）：`page=3` 会撞上下述既有 quirk
+    # （越界页 HTTP 404 + `data=None`，见 test_http_404_with_50000_for_out_of_range_page）。
+    for page in (1, 2):
+        data = api_client.get(LIST_URL, {"page": page, "pageSize": 2}).json()["data"]
+        seen += [r["instanceId"] for r in data["list"]]
+        assert data["total"] == 4
+    assert len(seen) == len(set(seen)) == data["total"]
+
+
+@pytest.mark.django_db
 def test_region_and_account_and_project_filters(api_client, account) -> None:  # noqa: ANN001
     api_client.force_authenticate(user=_role_user("cost4", "成本管理员"))
     _make(account, instance_id="in-hz", region="cn-hangzhou", project_tag="项目A")
