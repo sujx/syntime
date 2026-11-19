@@ -19,6 +19,8 @@ from apps.assets.idle_rules import (
 from apps.assets.models import CloudAsset
 from apps.assets.selectors import (
     _PROJECTION,
+    _SORTABLE,
+    _TEXT_SORT_KEYS,
     IdleCandidate,
     IdleQueryFilters,
     list_idle_assets,
@@ -293,9 +295,11 @@ def test_sql_order_is_total_and_pages_stitch_without_overlap(account: CloudAccou
 
     三点同时成立才放行：空值桶恒最后（不随方向翻转）、同值行的次级键**跟随**方向
     （`asc` ⇒ pk ASC、`desc` ⇒ pk DESC）、空值桶恒 pk ASC。把次级键写成无条件 `-pk`
-    的形状在 `asc` 档必然红——那正是 spec D14-d 点名的错法。
+    的形状在 `asc` 档必然红——那正是 spec D14-d 点名的错法。第三条只有空值桶里**放着
+    两行**才有牙：单行时那支 `then` 无论写成 `F("id")` 还是 `-F("id")` 取回的都是同一行，
+    所以这里两档都断言空值桶按 pk ASC 出现（把 `then=F("id")` 翻成 `-F("id")` ⇒ 两档同红）。
 
-    三行同值行的 pk 由 `_make` 顺序创建 ⇒ 单调递增（`instance_id` 里带自增计数，创建顺序
+    各行 pk 由 `_make` 顺序创建 ⇒ 单调递增（`instance_id` 里带自增计数，创建顺序
     即 pk 顺序）；这是本条期望序列成立的前提，若改用 bulk_create 之类无序写法就要同步改期望。
     """
     same_tag = [
@@ -308,23 +312,27 @@ def test_sql_order_is_total_and_pages_stitch_without_overlap(account: CloudAccou
         )
         for i in range(3)
     ]
-    null_tag = _make(
-        account,
-        resource_type="eip",
-        instance_id="tie-null",
-        status=CloudAsset.Status.UNBOUND,
-        project_tag=None,
-    )
+    null_tag = [
+        _make(
+            account,
+            resource_type="eip",
+            instance_id=f"tie-null-{i}",
+            status=CloudAsset.Status.UNBOUND,
+            project_tag=None,
+        )
+        for i in range(2)
+    ]
+    null_pks = [a.pk for a in null_tag]  # 空值桶恒 pk ASC，与 sort_order 无关
     expected = {
-        "asc": [a.pk for a in same_tag] + [null_tag.pk],
-        "desc": [a.pk for a in reversed(same_tag)] + [null_tag.pk],  # 空值桶仍 pk ASC
+        "asc": [a.pk for a in same_tag] + null_pks,
+        "desc": [a.pk for a in reversed(same_tag)] + null_pks,
     }
     for order in ("asc", "desc"):
         filters = IdleQueryFilters(sort_field="project_tag", sort_order=order)
         read = prepare_idle_read(filters)
         stitched = [
             row.asset.pk
-            for page in range(4)  # 每页 1 行 × 4 页 = 4 行全覆盖（切片偏移 0..3 各命中一行）
+            for page in range(5)  # 每页 1 行 × 5 页 = 5 行全覆盖（切片偏移 0..4 各命中一行）
             for row in read.rows(list(read.queryset[page : page + 1]))
         ]
         assert stitched == expected[order], order
@@ -348,13 +356,32 @@ def test_collate_c_beats_locale_order_on_mixed_case(account: CloudAccount) -> No
     """大小写＋非 ASCII 混合 ID：码位序 `B` < `a` < `中`，`en_HK` 下大写与重音次序不同。
 
     这条是上一条的**结果版**：上一条只看 SQL 文本，这一条真的让 DB 排序并取前两行。
+
+    创建顺序刻意让 `a-eip` 先落库（＝locale 序，也＝没有 ORDER BY 时的物理取回序），期望
+    却是 `B-eip` 在前 ⇒「压根没排序」和「按 locale 排序」两种退化都当场红，只有
+    `COLLATE "C"` 能绿（现证见 task-3 报告「Fix round 1」的两次变异）。
     """
-    _make(account, resource_type="eip", instance_id="B-eip", status=CloudAsset.Status.UNBOUND)
     _make(account, resource_type="eip", instance_id="a-eip", status=CloudAsset.Status.UNBOUND)
+    _make(account, resource_type="eip", instance_id="B-eip", status=CloudAsset.Status.UNBOUND)
     _make(account, resource_type="eip", instance_id="中文-eip", status=CloudAsset.Status.UNBOUND)
     read = prepare_idle_read(IdleQueryFilters(sort_field="instance_id"))
     ids = [row.asset.instance_id for row in read.rows(list(read.queryset[:2]))]
     assert ids == ["B-eip", "a-eip"]  # 码位序：ASCII 大写在前，非 ASCII 排最后
+
+
+def test_text_sort_key_set_covers_every_char_field() -> None:
+    """`_SORTABLE` 里每个 CharField 都必须落在 `_TEXT_SORT_KEYS` 里（D14-f 覆盖面，全序键不遗漏）。
+
+    其它用例只真的执行过 `instance_id`/`project_tag`/`expire_time` 三键：`region`、`status`、
+    `resource_type` 一旦从 frozenset 里掉出去，全套件仍全绿，而它们会静默退回 locale 序
+    ⇒ `LIMIT` 取回的是另一批行。这里用模型元数据把覆盖面钉成集合包含关系，不建任何行。
+    """
+    char_keys = {
+        name
+        for name in _SORTABLE
+        if CloudAsset._meta.get_field(name).get_internal_type() == "CharField"
+    }
+    assert char_keys <= _TEXT_SORT_KEYS
 
 
 @pytest.mark.django_db

@@ -21,7 +21,7 @@ from functools import reduce
 from operator import or_
 from typing import Any, Protocol
 
-from django.db.models import Case, F, IntegerField, Q, QuerySet, When
+from django.db.models import BigIntegerField, Case, F, Q, QuerySet, When
 from django.db.models.functions import Collate
 from django.utils import timezone
 
@@ -249,7 +249,7 @@ def order_by_key(filters: IdleQueryFilters) -> list[Any]:
     tie = Case(
         When(Q(**{f"{name}__isnull": True}), then=F("id")),
         default=-F("id") if desc else F("id"),
-        output_field=IntegerField(),
+        output_field=BigIntegerField(),
     )
     return [ordered, tie.asc()]
 
