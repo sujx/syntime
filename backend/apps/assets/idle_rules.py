@@ -124,6 +124,10 @@ IDLE_SINCE_ALIAS = "idle_since"
 # 停机起点的 SQL 表达 = `stopped_since()` 的三级回退（D14-b）。别名由读路径 annotate 出来，
 # 判据 ② 的阈值比较必须挂在这个别名上——`Q(Coalesce(...), "lte", x)` 这种表达式位置参数
 # 在 Django 5.2 会被拒（Cannot filter against a non-conditional expression）。
+# 三级之间的顺序**有实义**：`align_assets` 与 `upsert_domain` 把第 1、2 级同时写进同一行，
+# 取哪一级直接决定判据 ② 的日期来源。前两级互换必须让 `tests/test_idle_sql_equiv.py` 红——
+# 钉这一格的是该文件里的单行用例 `test_idle_since_takes_level1_before_level2`（rowspace 每
+# 行只填一档，抓不到它）。
 IDLE_SINCE = Coalesce("status_changed_at", "first_seen_at", "create_time")
 
 
