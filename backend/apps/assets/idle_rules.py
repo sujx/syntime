@@ -1,9 +1,11 @@
 """闲置判定四判据（PRD 3.14-1 / Q17；spec §2 接缝 A）。
 
-**判定口径的唯一实现**：查询接口与后续导出都只调 `judge`，禁止在 selector / serializer /
-view 里复制判据条件（spec US-3）。`judge` 仍是纯函数（不碰 DB、时钟由调用方注入），F063 的
-四类命中与阈值翻转全部打在这一层；`idle_branches()` 只**构造** ORM 查询表达式、不执行查询，
-因此口径的两份表达仍留在同一个文件里，避免跨文件漂移。
+**判据条件只写在这一层**（spec US-3），禁止在 selector / serializer / view 里复制判据条件。
+本层内是**两份表达、一个口径**：`judge` 为权威实现（出参结论与人读文案都出自它；纯函数、
+不碰 DB、时钟由调用方注入，F063 的四类命中与阈值翻转全部打在它身上），`idle_branches()` 为
+它的 SQL 谓词表达（读路径下推到 WHERE 的那一份，只**构造**表达式、不执行查询）。
+两份同文件同来源，等价性由 `tests/test_idle_sql_equiv.py` 在全笛卡尔积上钉死
+（spec §9 D14-e①）：改任何一支必须同轮改另一支，并让那条测试先红后绿。
 """
 
 from __future__ import annotations
@@ -114,10 +116,13 @@ IDLE_SINCE_ALIAS = "idle_since"
 # 停机起点的 SQL 表达 = `stopped_since()` 的三级回退（D14-b）。别名由读路径 annotate 出来，
 # 判据 ② 的阈值比较必须挂在这个别名上——`Q(Coalesce(...), "lte", x)` 这种表达式位置参数
 # 在 Django 5.2 会被拒（Cannot filter against a non-conditional expression）。
-# 三级之间的顺序**有实义**：`align_assets` 与 `upsert_domain` 把第 1、2 级同时写进同一行，
-# 取哪一级直接决定判据 ② 的日期来源。前两级互换必须让 `tests/test_idle_sql_equiv.py` 红——
-# 钉这一格的是该文件里的单行用例 `test_idle_since_takes_level1_before_level2`（rowspace 每
-# 行只填一档，抓不到它）。
+# 三级之间的顺序**有实义**——但只在 `align_assets` 那批行上：它把第 1、2 级同时写进同一行，
+# 且 `status` 可以是 `stopped`，取哪一级直接决定判据 ② 的日期来源。`upsert_domain` 虽然也两列
+# 都写，但它的 `status` 由 `derive_domain_status()` 推导（normal/expiring/expired/unknown，
+# 永不是 `stopped`）、`charge_type` 留 NULL ⇒ 结构上够不到判据 ②，层级顺序对它那批行不产生
+# 判定差异（旧注释把两条路径并列为「都决定 ②」，那是错的，别写回去）。
+# 前两级互换必须让 `tests/test_idle_sql_equiv.py` 红——钉这一格的是该文件里的单行用例
+# `test_idle_since_takes_level1_before_level2`（rowspace 每行只填一档，抓不到它）。
 IDLE_SINCE = Coalesce("status_changed_at", "first_seen_at", "create_time")
 
 

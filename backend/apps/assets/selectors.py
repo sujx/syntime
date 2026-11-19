@@ -1,15 +1,32 @@
 """闲置资源清单读路径（api.md 接口16；工程约定 §2：selectors 只做读）。
 
-判定口径不在本层：SQL 下推的是 `idle_rules.idle_branches()` 表达的**精确谓词**（未释放 ＋
-选中支的 OR，spec §9 D14-a/g），纯列筛选由 `_column_filters()` 叠加；`judge` 仍逐行跑，
-只负责出参文案与「SQL 命中 ⇒ judge 必命中」的对拍（等价性由 tests/test_idle_sql_equiv.py
-钉住）。排序与分页也在 SQL：`order_by_key()` 给出 ORDER BY（api.md 接口16「服务端全量排序」
-的全序语义由此承接），分页交视图层 `ResultPaginator`（它收到的是已排序的投影 QuerySet，
-`total` 由 SQL `COUNT` 给出）。本层不感知角色。
+判定谓词、ORDER BY、分页**三样全在 SQL**（spec §9 D14-a/d/f/g，2026-11-19 落地）：谓词是
+`idle_rules.idle_branches()` 表达的**精确判据**（未释放 ＋ 选中支的 OR，D14-a/g；「SQL 只下推
+必要条件」那一版预筛已按 D14-g 删除），纯列筛选由 `_column_filters()` 叠加，ORDER BY 由
+`order_by_key()` 给出（api.md 接口16「服务端全量排序」的全序语义由它承接），分页交视图层
+`ResultPaginator` 对**已排序的投影 QuerySet** 切片 ⇒ 每请求只回一页、`total` 由 SQL `COUNT`
+给出；整份取回的形状只剩 `list_idle_assets()` 那条整表档（筛与排同样已在 SQL 里，只是不分页）。
 
-取数形状是 `_PROJECTION` 这 15 列的投影（spec §8.1 方案 3 + 方案 5），既不取整行也不 JOIN
-账号表：5 万行实测把这两步的代价量过（1911ms 整行 → 624ms 投影；其中去 JOIN 值 662ms），
-代价全部落在**客户端逐行取回**上，DB 侧执行只 22.8ms。
+`judge` 仍逐行跑，但**只跑页内行**（走整表档时是整份命中行），职责是出参文案；它还兼任最后一
+道防线——命中集由 SQL 筛出后，若某行 `judge` 判不中，`IdleRead.rows()` 当场
+`AssertionError`，绝不静默少一行（`total` 是 SQL 算的，少行会让响应自相矛盾）。口径等价性由
+两道保险钉住：仓内 `tests/test_idle_sql_equiv.py`（全笛卡尔穷举 ＋ 生产谓词接线半边），与
+2026-11-19 取证轮在 5 万行库上的新旧双臂对拍（候选 40012、命中 37511，9 个排序面双向差集 0、
+顺序逐位相同）。本层不感知角色。
+
+取数形状是 `_PROJECTION` 这 **15 投影列**（spec §8.1 方案 3 + 方案 5），既不取整行也不 JOIN
+账号表。注意 **15 是投影列宽、11 是 `IdleRowSerializer` 的出参字段数**，两个数不是一回事、
+别混用：15 列里直接进 11 个出参字段的只有 7 列（`instance_id`/`instance_name`/`resource_type`/
+`region`/`project_tag`/`status`/`expire_time`），余下 8 列各有用处——`registrar` 与
+`cloud_account_id` 供归属解析（出参那个 `cloudAccountName`），`id` 是排序次级键，
+`released_at`/`status_changed_at`/`first_seen_at`/`create_time`/`charge_type` 供 `judge`
+与 SQL 谓词。
+「1911ms 整行 → 624ms **11 键投影**、去 JOIN 值 662ms（1911→1249）、DB 侧执行只 22.8ms、
+代价全落在**客户端逐行取回**上」是 2026-11-18 §8.1 在整表档上量出来的读数（§8.2 与 §8.3 的
+同形状后续读数记在 `IdleCandidate` 的 docstring 里）；2026-11-19 分页下推后视图每请求只取回
+一页，那段取回代价只剩 `list_idle_assets()` 这条整表档还在付（2026-11-19 下推取证轮的同轮
+读数：函数级 `new-page` median **62ms** vs `old` **2050ms**，HTTP P95 **130ms**／排序＋深翻页
+**176ms**，门槛口径 5 并发 P95 ≤ 2000ms）。
 """
 
 from __future__ import annotations
@@ -87,11 +104,18 @@ _PROJECTION: tuple[str, ...] = (
 class IdleCandidate:
     """一行候选：投影列的值，**不是** `CloudAsset` 对象。
 
-    取代整行取回的动机是实测，不是审美：5 万行同一候选集下，不建模型对象的投影 **624ms** vs
-    整行模型对象 **1911ms**；5 进程并发下 P95 **3016 → 1772**（规格 §8.1，进程内脚本档位；
-    部署形态复测 2808ms 未达标，见规格 §8.3）。
-    `slots` 让 4 万个实例少一份 `__dict__`。`pk` 是 `CloudAsset` 侧的同名替身，供排序次级键
-    与既有用例使用（`id` 才是列名，见 `_PROJECTION`）。
+    取代整行取回的动机是实测，不是审美。下面几个数是**带日期的历史读数**，量的都是**整表取回**
+    那一档：2026-11-18 规格 §8.1 方案 3——同候选集下不建模型对象的 11 键投影 **624ms** vs 整行
+    模型对象 **1911ms**（§8.2 再在含全部出参列的这 15 列形状上给出 **661ms** vs 改动前
+    **1837ms**），5 进程并发下 P95 **3016 → 1772**（规格 §8.1，进程内脚本档位）；2026-11-19
+    规格 §8.3 把同一形状改打部署形态（gunicorn ＋ 真 HTTP）复测，5 并发 P95 **2808ms**
+    （门槛口径：5 并发 P95 ≤ 2000ms）。
+
+    新事实（2026-11-20 记录；形状由 2026-11-19 的 D14 下推改掉）：接口 16 的视图每请求只构造
+    **一页**的行对象，**不再逐行取回那 4 万候选**，上面那几个整表档读数因此都不再是视图的
+    代价（视图档读数见模块 docstring）。`slots` 省掉的那份 `__dict__`，如今只在整表档
+    （`list_idle_assets`，一次几万个实例）上才划算——视图档一页至多 100 个实例。`pk` 是
+    `CloudAsset` 侧的同名替身，供排序次级键与既有用例使用（`id` 才是列名，见 `_PROJECTION`）。
     """
 
     id: int
@@ -232,7 +256,11 @@ _TEXT_SORT_KEYS = frozenset({"instance_id", "resource_type", "status", "region",
 
 
 def order_by_key(filters: IdleQueryFilters) -> list[Any]:
-    """把 Python 侧那份全量排序的三条语义翻成 ORDER BY：键（NULLS LAST，方向照传入）＋ 次级 pk。
+    """把 2026-11-19 之前那份 Python 侧全量排序（已随分页下推删除）的三条语义翻成 ORDER BY。
+
+    三条是：键值 NULLS LAST（空值桶恒最后，不随方向翻转）、非空桶次级键 `pk` 跟随方向、
+    空值桶次级键恒 `pk` ASC——少了第三条就不是全序，`LIMIT` 翻页会重行或漏行。逐条的牙在
+    `tests/test_idle_selectors.py::test_sql_order_is_total_and_pages_stitch_without_overlap`。
 
     Args:
         filters: 取 `sort_field`（白名单外回退 `expire_time`）与 `sort_order`。
@@ -312,12 +340,17 @@ def prepare_idle_read(filters: IdleQueryFilters) -> IdleRead:
 def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
     """返回命中四判据的闲置清单，已按 `sort_field` / `sort_order` 排好、未分页。
 
-    整份取数（不分页）——接口 18 导出与既有测试的消费口。接口 16 的视图已改走
-    `prepare_idle_read()` ＋ `ResultPaginator` ＋ `IdleRead.rows()`，每请求只取回一页。
+    整份取数（不分页）的**整表档**。接口 16 的视图自 2026-11-19 起改走
+    `prepare_idle_read()` ＋ `ResultPaginator` ＋ `IdleRead.rows()`，每请求只取回一页，
+    **不经本函数**。现证消费口：`apps/assets/urls.py` 只注册了 `idle/`、接口 18 导出尚未落地
+    ⇒ 眼下调用它的只有 `tests/test_idle_selectors.py` 与 `tests/test_seed_demo.py`；
+    导出落地时它按 spec D14-h 就是导出的取数口。2026-11-19 下推取证的三臂对照显示这条整表档
+    并没有变快（`new-full` 对 `old` median **0.969×**）：下推省的是 SQL 侧的筛与排，取回与建行
+    仍按整份付。
 
     `idle_stopped_days` 每请求经 `get_platform_setting` 两级回退读取（spec US-4）。
 
-    两条后续 Task 要照单继承的既定口径：
+    两条既定口径（接口 18 导出等后续消费方要照单继承）：
 
     - **归属优先级**：`resource_type == "domain"` 行的 `account_name` 取**注册商**
       （PRD 3.14-2），这就是产品规则本身，故域名行即便挂了 `cloud_account` 也显示注册商。
@@ -331,7 +364,8 @@ def list_idle_assets(filters: IdleQueryFilters) -> list[IdleRow]:
 
     Returns:
         命中判据的 `IdleRow` 列表（资产 + `judge` 结论 + 已解析的归属账号名），
-        已按 SQL ORDER BY 全量排序、未分页（分页交视图层 `ResultPaginator`）；无命中时为空列表。
+        整份返回、已按 SQL ORDER BY 排成严格全序；本函数不分页（分页只在视图层做）。
+        无命中时为空列表。
     """
     read = prepare_idle_read(filters)
     return read.rows(list(read.queryset))

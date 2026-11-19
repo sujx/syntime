@@ -4,8 +4,11 @@
 与失败行明细（行号 + 原因）。CSV 解析在本层，落库与校验口径全在
 ``services.import_domains``（与 Django Admin 单条维护共用同一校验逻辑）。
 
-闲置清单：判定实时推导、不落库，本层只做入参校验、分页与 notice 拼装，
-判据口径在 ``idle_rules.judge``、读路径在 ``selectors.prepare_idle_read``。
+闲置清单：判定实时推导、不落库，本层只做入参校验、分页与 notice 拼装；读路径与每请求的
+行数由 ``selectors.prepare_idle_read`` ＋ ``IdleRead.rows`` 决定（谓词、ORDER BY 在 SQL 里
+下推，分页由本层交给 ``ResultPaginator``），判据口径在 ``idle_rules``——命中集来自它的 SQL
+表达 ``idle_branches``、页内行的文案来自 ``judge``，两份表达的等价性由
+``tests/test_idle_sql_equiv.py`` 钉住。
 """
 
 from __future__ import annotations

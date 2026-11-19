@@ -102,8 +102,8 @@ def test_sql_carries_the_exact_predicate_not_a_prefilter() -> None:
 
     取代删除的 `test_candidate_prefilter_is_lossless`（D14-g）。这条**不证明等价**
     （等价归 `test_idle_sql_equiv.py`），它证明的是**位置**：判定确实进了 SQL，
-    而不是取回 40 万行后再筛。`stopped` 出现两次是新旧形状的分界——旧预筛只在
-    一个 `status IN (…)` 里写它 1 次，新 SQL 里判据 ① 与 ② 各自比较一次。
+    而不是整份取回 4 万候选行后再在 Python 里筛。`stopped` 出现两次是新旧形状的分界——
+    旧预筛只在一个 `status IN (…)` 里写它 1 次，新 SQL 里判据 ① 与 ② 各自比较一次。
 
     token 写法按 Django 5.2 的现证渲染定稿：`str(query)` 走 `sql % params`，字面量
     **裸内联不带引号**（`"cloud_asset"."status" = stopped`），故这里先去单引号再比对，
@@ -299,8 +299,10 @@ def test_sql_order_is_total_and_pages_stitch_without_overlap(account: CloudAccou
     两行**才有牙：单行时那支 `then` 无论写成 `F("id")` 还是 `-F("id")` 取回的都是同一行，
     所以这里两档都断言空值桶按 pk ASC 出现（把 `then=F("id")` 翻成 `-F("id")` ⇒ 两档同红）。
 
-    各行 pk 由 `_make` 顺序创建 ⇒ 单调递增（`instance_id` 里带自增计数，创建顺序
-    即 pk 顺序）；这是本条期望序列成立的前提，若改用 bulk_create 之类无序写法就要同步改期望。
+    各行 pk 由 `_make` 走 `CloudAsset.objects.create` 顺序落库 ⇒ 单调递增（pk 来自
+    `DEFAULT_AUTO_FIELD = BigAutoField` 的序列，创建顺序即 pk 顺序；`instance_id` 里那个计数
+    只保证列值唯一，不是 pk 单调的原因）；这是本条期望序列成立的前提，若改用 bulk_create
+    之类无序写法就要同步改期望。
     """
     same_tag = [
         _make(
@@ -466,12 +468,17 @@ def test_account_names_are_read_once_not_per_row(account: CloudAccount) -> None:
 def test_read_path_yields_projection_rows_not_model_instances(account: CloudAccount) -> None:
     """读路径取回的是**投影行**而非 `CloudAsset` 模型对象（规格 §8.1 方案 3）。
 
-    5 万行实测：同一候选集下不建模型对象的投影取回 **624ms** vs 整行模型对象 **1911ms**，
-    且这一降本在并发下同样成立——5 进程实测 P95 **3016 → 1772**。但那是 2026-11-18 进程内脚本
-    的档位：2026-11-19 在部署形态（gunicorn ＋ 真 HTTP）复测 5 并发 P95 = 2808ms ⇒ 未达标
-    （规格 §8.3），所以本条钉的是**取回形状**，不是达标证据。
-    耗时不进 pytest（D12 口径），但形状一旦被改回整行取回，本条必然红：四判据/序列化/API 的
-    所有既有断言都是属性级的，模型对象与投影行都能满足，**唯有形状本身需要单独钉住**。
+    历史读数（保留为带日期的史实，量的都是**整表取回**那一档）：2026-11-18 5 万行实测——同一
+    候选集下不建模型对象的投影取回 **624ms** vs 整行模型对象 **1911ms**，且这一降本在并发下
+    同样成立（5 进程实测 P95 **3016 → 1772**，进程内脚本档位）；2026-11-19 在部署形态
+    （gunicorn ＋ 真 HTTP）复测同一形状的 5 并发 P95 = **2808ms**（规格 §8.3；门槛口径是
+    5 并发 P95 ≤ 2000ms）。2026-11-20 记录的新事实：谓词＋排序＋分页下推后（2026-11-19 落地），
+    接口 16 的视图每请求只取回一页、只构造页内的行对象，上面那几个整表档读数不再是视图的代价
+    （视图档的同轮读数统一记在 `apps/assets/selectors.py` 的模块 docstring，别在这里抄一份）。
+
+    所以本条钉的是**取回形状**，不是性能证据；耗时不进 pytest（D12 口径）。但形状一旦被改回
+    整行取回，本条必然红：四判据/序列化/API 的所有既有断言都是属性级的，模型对象与投影行都能
+    满足，**唯有形状本身需要单独钉住**。
     """
     made = [
         _make(
