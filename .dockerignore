@@ -1,0 +1,47 @@
+# 构建上下文是 syntime/。这个文件的存在首先是安全边界：
+# backend/.env 里是真实密钥，绝不允许进镜像层（它也不参与构建——
+# base.py:11 的 load_dotenv 在容器里找不到该文件即静默跳过，密钥由 compose.yaml 注入）。
+
+# 版本控制 / 工具缓存
+.git
+.gitignore
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.superpowers
+
+# 虚拟环境与依赖：镜像内各自重装
+**/.venv
+**/node_modules
+
+# 构建产物：镜像内由 node 阶段与 collectstatic 现做，宿主产物进上下文只会造成假象
+**/dist
+**/coverage
+**/*.tsbuildinfo
+backend/staticfiles
+frontend/tsconfig.tsbuildinfo
+
+# 运行时状态与本机部署产物（容器内一律走卷或 stdout）
+backend/logs
+backend/media
+backend/celerybeat-schedule*
+**/*.sqlite3
+
+# 密钥
+.env
+.env.local
+backend/.env
+backend/.env.*
+backend/.masterkey*
+
+# 与运行镜像无关的目录
+website
+db
+backend/probe_aliyun
+
+# 交付元文件本身
+Dockerfile
+compose.yaml
+.dockerignore

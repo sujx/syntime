@@ -1,0 +1,196 @@
+# SynTime 可移植部署栈：一条 `docker compose up -d` 起齐
+# 数据库 / broker / 一次性初始化 / web / worker / beat，另加可选的演示数据。
+#
+# 密钥与端口从同目录 .env 读取（cp .env.example .env）。.env 被 .gitignore 与
+# .dockerignore 双重挡住：既不进版本库，也不进镜像层。
+#
+# 端口策略：只有 web 发布宿主端口，且只绑 127.0.0.1——沿用 backend/deploy_prod.sh:10
+# 的拍板（本机无 TLS 终结与防火墙决策，公网暴露需要先定这两件）。db / redis 完全不发布，
+# 因此与本机已在跑的宿主 Postgres(5432) / Redis(6379) 天然无冲突；宿主 8000 若在别处服务，
+# 用 SYNTIME_WEB_PORT=8001 避让即可。
+#
+# 顶层 name 固定 project，卷名前缀恒为 syntime_*，不与宿主上其它栈互相误伤。
+name: syntime
+
+# ── 应用服务的公共形状：同一镜像，靠 command 分角色 ──
+# SECRET_KEY 与 DB 密码没有可用默认值（base.py:13 缺失即 KeyError），
+# 故在下方用 ${VAR:?} 硬拦：宁可拒绝启动，也不要半死不活的栈。
+# build 段留在每个服务上而不是只写 web，是为了让任意子集都能单独起
+# （`compose up worker` 不必先 up web）；四处 build 共享同一 tag，
+# 后几次全命中缓存，代价是 compose 多打几行 Built。
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      NPM_REGISTRY: ${NPM_REGISTRY:-}
+  image: syntime:${SYNTIME_IMAGE_TAG:-local}
+  environment:
+    # 容器网络里的主机名即服务名；base.py:74-75 与 :155 的默认值是 localhost，
+    # 在容器内指向容器自身，必须显式覆盖。
+    DJANGO_SETTINGS_MODULE: config.settings.prod
+    SYNTIME_DB_HOST: db
+    SYNTIME_DB_PORT: "5432"
+    SYNTIME_DB_NAME: ${SYNTIME_DB_NAME:-syntime_prod}
+    SYNTIME_DB_USER: ${SYNTIME_DB_USER:-syntime}
+    SYNTIME_DB_PASSWORD: ${SYNTIME_DB_PASSWORD:?未在 .env 中设置 SYNTIME_DB_PASSWORD}
+    SYNTIME_SECRET_KEY: ${SYNTIME_SECRET_KEY:?未在 .env 中设置 SYNTIME_SECRET_KEY}
+    SYNTIME_CELERY_BROKER_URL: redis://redis:6379/0
+    # 域名/IP 上线时在此追加；CSRF_TRUSTED_ORIGINS 只在走反代或换端口做 POST 时才需要。
+    SYNTIME_ALLOWED_HOSTS: ${SYNTIME_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    SYNTIME_CSRF_TRUSTED_ORIGINS: ${SYNTIME_CSRF_TRUSTED_ORIGINS:-}
+    # 云凭证 AK/SK 的信封加密主密钥。缺省不阻断启动，但一旦保存或读取云账号，
+    # common/crypto.py:53 会以 ImproperlyConfigured 失败——init 服务对此做了显式前置检查。
+    SYNTIME_MASTER_KEY: ${SYNTIME_MASTER_KEY:-}
+    SYNTIME_MASTER_KEY_FILE: ${SYNTIME_MASTER_KEY_FILE:-}
+  restart: unless-stopped
+
+services:
+  db:
+    # 大版本对齐宿主实测的 PostgreSQL 17.12；账单明细的月分区由 Django 迁移建，
+    # 不需要 pg_partman，也没有额外扩展依赖。
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${SYNTIME_DB_NAME:-syntime_prod}
+      POSTGRES_USER: ${SYNTIME_DB_USER:-syntime}
+      POSTGRES_PASSWORD: ${SYNTIME_DB_PASSWORD:?未在 .env 中设置 SYNTIME_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    # 大版本对齐宿主实测的 Redis 8.0.2。故意不给卷：broker 里未确认的任务在重启后
+    # 本就无法可靠恢复，挂卷只会换来一堆无意义的 RDB 落盘。
+    # 会重复调度的 beat 计划由 beat 服务的 beatdata 卷负责，见下。
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  init:
+    <<: *app
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    # migrate 建表与分区、init_roles 建三角色，两者幂等（init_roles.py 先读 existing 再 create），
+    # 因此可以每次 up 都跑，不用区分首次与增量。
+    # 主密钥在这里前置校验：否则栈看起来完全健康，直到某次保存云账号才 500。
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        if [ -z "$${SYNTIME_MASTER_KEY:-}" ] && [ -z "$${SYNTIME_MASTER_KEY_FILE:-}" ]; then
+          echo "缺少云凭证主密钥：请在 .env 设置 SYNTIME_MASTER_KEY 或 SYNTIME_MASTER_KEY_FILE。" >&2
+          echo "生成 32 字节 base64：python -c \"import secrets,base64;print(base64.b64encode(secrets.token_bytes(32)).decode())\"" >&2
+          exit 1
+        fi
+        python manage.py migrate --noinput
+        python manage.py init_roles
+
+  web:
+    <<: *app
+    # 容器内绑 0.0.0.0 是必需的（宿主侧才收在 127.0.0.1）——容器有独立网络命名空间，
+    # 与 deploy_prod.sh 绑 127.0.0.1 的决定不冲突。
+    # workers 默认 5：继承 deploy_prod.sh:11-13，PRD 4.1 的达标读数 P95 1907ms 出自
+    # 「5 并发 × 多进程」形状，单进程 5 线程实测 5851ms 不达标。调小会让 5 并发排队。
+    command:
+      - gunicorn
+      - config.wsgi:application
+      - --bind
+      - 0.0.0.0:8000
+      - --workers
+      - ${SYNTIME_WORKERS:-5}
+      - --timeout
+      - "60"
+      - --access-logfile
+      - "-"
+      - --error-logfile
+      - "-"
+    ports:
+      - "127.0.0.1:${SYNTIME_WEB_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      # /admin/login/ 是实测 200 且无需鉴权的存活探针（同机生产进程实测），
+      # 用 stdlib urllib 是因为 python:3.12-slim 里没有 curl。
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          url = "http://127.0.0.1:8000/admin/login/"
+          try:
+              code = urllib.request.urlopen(url, timeout=3).status
+          except Exception:
+              code = 0
+          sys.exit(0 if code == 200 else 1)
+      interval: 10s
+      timeout: 8s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  beat:
+    <<: *app
+    # 调度状态落卷：celery beat 默认把 schedule 写在当前工作目录，而容器重建即清零；
+    # 空的调度文件会让整点任务（events.self_calc_detect，crontab(minute=0)）
+    # 在下次整点被当作到期立即补跑一次。
+    command:
+      - celery
+      - -A
+      - config
+      - beat
+      - -l
+      - info
+      - --schedule
+      - /var/lib/syntime-beat/celerybeat-schedule
+    volumes:
+      - beatdata:/var/lib/syntime-beat
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  seed:
+    <<: *app
+    # 演示数据不是默认路径：`docker compose --profile demo up -d` 才会跑。
+    # 一次性任务，跑完即退，不进 restart 循环。
+    profiles: ["demo"]
+    restart: "no"
+    command: ["python", "manage.py", "seed_demo"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  beatdata:

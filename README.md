@@ -79,8 +79,16 @@ SYNTIME_CELERY_BROKER_URL=redis://localhost:6379/0
 python manage.py migrate          # 建表 + 字典/配置种子数据
 python manage.py init_roles       # 幂等创建三角色 Group（成本管理员/云运维/财务人员）
 python manage.py createsuperuser  # 建管理员账号
+python manage.py shell -c "       # ← 给上面那个账号挂角色，否则登不进前端（见下）
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+u = get_user_model().objects.get(username='上一步的用户名')
+u.groups.add(Group.objects.get(name='成本管理员'))
+"
 python manage.py runserver
 ```
+
+⚠️ **`createsuperuser` 单独不够**：平台角色只认全局 Group（`common/permissions.py` 的 `get_role` 不看 `is_superuser`），无组的账号登录后 `/api/token/` 返回 `role=null`，前端会直接报「该账号未分配平台角色」。`/admin/` 用 superuser 照样能进，前端页面不行。
 
 启动后：
 
@@ -94,6 +102,43 @@ python manage.py runserver
 celery -A config worker -l info   # 执行任务
 celery -A config beat   -l info   # 调度：每月3日重算上月成本、每小时自算检测
 ```
+
+## 🐳 容器部署（一条命令起全套）
+
+不想在本机装 PostgreSQL / Redis / Node 工具链时，用仓库根的 `compose.yaml`：
+
+```bash
+cd syntime
+cp .env.example .env      # 填 SYNTIME_SECRET_KEY / SYNTIME_DB_PASSWORD / SYNTIME_MASTER_KEY
+docker compose up -d --build
+```
+
+起来的是 6 个容器：`db`(postgres:17-alpine) · `redis`(redis:8-alpine) · `init`(一次性 `migrate` + `init_roles`，幂等) · `web`(gunicorn×5 + WhiteNoise 同源托管前端) · `worker` · `beat`。前端在同一条命令里由镜像的 node 阶段构建（`tsc -b && vite build` 过不去就出不了镜像），宿主不需要装 Node。
+
+```bash
+docker compose --profile demo up -d   # 额外跑一次 seed_demo 灌演示数据
+docker compose ps                      # 等 web 变 healthy
+docker compose logs -f web worker beat
+docker compose down                    # 停栈并保留数据；加 -v 连库带 beat 调度状态一起删
+```
+
+访问 <http://127.0.0.1:8000/>，Django Admin 在 `/admin/`。管理员账号不进容器初始化——`createsuperuser` 是交互式的，由你本人执行；**执行完还要给它挂一个角色组**，否则前端登录会被拒（原因见上面「初始化数据库与角色」那段末尾的 ⚠️）：
+
+```bash
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py shell -c "
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+u = get_user_model().objects.get(username='上一步的用户名')
+u.groups.add(Group.objects.get(name='成本管理员'))
+"
+```
+
+**暴露面**：只有 `web` 发布端口，且只绑 `127.0.0.1`；`db` / `redis` 不发布任何宿主端口。要和已在跑 `backend/deploy_prod.sh`（占宿主 8000）的机器共存，`.env` 里改 `SYNTIME_WEB_PORT=8001` 即可。公网暴露需要先定 TLS 终结与防火墙——这两件不由 compose 文件替你决定。
+
+**关键旋钮**（`.env.example` 内各有注释）：`SYNTIME_WEB_PORT`、`SYNTIME_WORKERS`（默认 5，PRD 4.1 的 P95 达标读数出自「5 并发 × 多进程」形状，调小会让 5 并发排队）、`SYNTIME_ALLOWED_HOSTS`、`NPM_REGISTRY`（国内换 npm 源）。
+
+**主密钥**：`SYNTIME_MASTER_KEY` 缺失时栈照样能起，但一保存云账号 AK/SK 就抛 `ImproperlyConfigured`（它是信封加密的 KEK，见 `backend/common/crypto.py`）。因此 `init` 服务显式检查这一项并拒绝完成，把故障从"某次点击 500"提前到"部署当场"。
 
 ## 🧭 主要 API
 
@@ -113,6 +158,9 @@ celery -A config beat   -l info   # 调度：每月3日重算上月成本、每�
 
 ```
 syntime/
+├── compose.yaml    # 可移植容器栈：db/redis/init/web/worker/beat（+ demo profile 灌种子）
+├── Dockerfile      # 多阶段：node:22-alpine 建前端 → python:3.12-slim 运行
+├── .dockerignore   # 密钥与宿主构建产物不进镜像层
 ├── backend/
 │   ├── apps/
 │   │   ├── billing/    # 云账号、账单明细、汇率、资源类型字典、同步日志

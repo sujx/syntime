@@ -20,6 +20,8 @@ celerybeat-schedule*
 # Secrets
 .env
 .env.*
+# 例外：模板文件本身要入库（上一行的 .env.* 会把它一起吞掉）
+!.env.example
 .masterkey*
 
 # Node / frontend
