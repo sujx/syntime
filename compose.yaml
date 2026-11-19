@@ -101,8 +101,10 @@ services:
     <<: *app
     # 容器内绑 0.0.0.0 是必需的（宿主侧才收在 127.0.0.1）——容器有独立网络命名空间，
     # 与 deploy_prod.sh 绑 127.0.0.1 的决定不冲突。
-    # workers 默认 5：继承 deploy_prod.sh:11-13，PRD 4.1 的达标读数 P95 1907ms 出自
-    # 「5 并发 × 多进程」形状，单进程 5 线程实测 5851ms 不达标。调小会让 5 并发排队。
+    # workers 默认 5：继承 deploy_prod.sh:11-14。PRD 4.1「闲置资源查询」的门槛是 5 并发
+    # P95 ≤ 2s；2026-11-19 在本形状（gunicorn 5 worker ＋ 真 HTTP，cloud_asset 5 万行、
+    # 候选 40012）实测 5 并发 P95 = 2808ms ⇒ 当前未达标（单进程 5 线程档 5851ms 亦未达标）。
+    # 5 既是门槛口径也是实测形状，调小只会加重排队，不是降本手段。
     command:
       - gunicorn
       - config.wsgi:application

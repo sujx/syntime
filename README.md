@@ -136,7 +136,7 @@ u.groups.add(Group.objects.get(name='成本管理员'))
 
 **暴露面**：只有 `web` 发布端口，且只绑 `127.0.0.1`；`db` / `redis` 不发布任何宿主端口。要和已在跑 `backend/deploy_prod.sh`（占宿主 8000）的机器共存，`.env` 里改 `SYNTIME_WEB_PORT=8001` 即可。公网暴露需要先定 TLS 终结与防火墙——这两件不由 compose 文件替你决定。
 
-**关键旋钮**（`.env.example` 内各有注释）：`SYNTIME_WEB_PORT`、`SYNTIME_WORKERS`（默认 5，PRD 4.1 的 P95 达标读数出自「5 并发 × 多进程」形状，调小会让 5 并发排队）、`SYNTIME_ALLOWED_HOSTS`、`NPM_REGISTRY`（国内换 npm 源）。
+**关键旋钮**（`.env.example` 内各有注释）：`SYNTIME_WEB_PORT`、`SYNTIME_WORKERS`（默认 5——PRD 4.1「闲置资源查询」的门槛口径是 5 并发 / P95 ≤ 2s，2026-11-19 在本形状（gunicorn 5 worker ＋ 真 HTTP、5 万行）实测 **P95 2808ms，未达该门槛**；5 既是门槛口径也是实测形状，调小只会加重排队，不是降本手段）、`SYNTIME_ALLOWED_HOSTS`、`NPM_REGISTRY`（国内换 npm 源）。
 
 **主密钥**：`SYNTIME_MASTER_KEY` 缺失时栈照样能起，但一保存云账号 AK/SK 就抛 `ImproperlyConfigured`（它是信封加密的 KEK，见 `backend/common/crypto.py`）。因此 `init` 服务显式检查这一项并拒绝完成，把故障从"某次点击 500"提前到"部署当场"。
 
