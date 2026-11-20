@@ -7,8 +7,9 @@
 闲置清单：判定实时推导、不落库，本层只做入参校验、分页与 notice 拼装；读路径与每请求的
 行数由 ``selectors.prepare_idle_read`` ＋ ``IdleRead.rows`` 决定（谓词、ORDER BY 在 SQL 里
 下推，分页由本层交给 ``ResultPaginator``），判据口径在 ``idle_rules``——命中集来自它的 SQL
-表达 ``idle_branches``、页内行的文案来自 ``judge``，两份表达的等价性由
-``tests/test_idle_sql_equiv.py`` 钉住。
+表达 ``idle_branches``、页内行的文案来自 ``judge``。两份表达的等价性与整条读路径的等价性由
+``selectors`` 模块 docstring 点名的**三道护栏**钉住（①穷举等价、②5 万行双臂对拍、③首屏出参
+逐字段等值），各层覆盖面宽窄以彼处为准。
 """
 
 from __future__ import annotations
